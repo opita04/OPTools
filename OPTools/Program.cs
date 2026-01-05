@@ -20,6 +20,7 @@ internal static class Program
             Application.SetCompatibleTextRenderingDefault(false);
 
             // Debug: Log what arguments we received (remove after debugging)
+            // Debug: Log what arguments we received (remove after debugging)
             if (args.Length > 0)
             {
                 System.Diagnostics.Debug.WriteLine($"OPTools launched with {args.Length} argument(s):");
@@ -28,6 +29,9 @@ internal static class Program
                     System.Diagnostics.Debug.WriteLine($"  Arg[{i}]: '{args[i]}'");
                 }
             }
+
+            // Initialize Audit Logging
+            OPTools.Utils.AuditLogger.Initialize();
 
             bool silentMode = false;
             string? targetPath = null;
@@ -139,9 +143,11 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            // Show error so user knows something went wrong
+            // Log full details for diagnostics
+            OPTools.Utils.AuditLogger.LogOperation("STARTUP_ERROR", ex.ToString(), false);
+            
             MessageBox.Show(
-                $"An error occurred starting OPTools:\n\n{ex.Message}\n\nStack trace:\n{ex.StackTrace}",
+                $"An error occurred starting OPTools:\n\n{ex.Message}\n\nCheck logs for details.",
                 "OPTools Error",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
@@ -150,6 +156,14 @@ internal static class Program
 
     private static void RunSilentMode(string targetPath)
     {
+        // Tier 1 Audit Fix: Block system paths in silent mode
+        if (OPTools.Utils.PathHelper.IsDangerousPath(targetPath))
+        {
+            // Exit with error code 2 (Access Denied / Protected)
+            Environment.Exit(2);
+            return;
+        }
+
         try
         {
             FileUnlocker unlocker = new FileUnlocker(targetPath);
@@ -163,9 +177,11 @@ internal static class Program
 
             System.Threading.Thread.Sleep(200);
 
-            bool deleted = unlocker.DeleteFileOrFolder();
-
-            if (!deleted)
+            try
+            {
+                unlocker.DeleteFileOrFolder();
+            }
+            catch
             {
                 Environment.Exit(1);
             }

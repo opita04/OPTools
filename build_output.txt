@@ -1,0 +1,26 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+C:\AI\COMPLETED\OPTools\OPTools\Core\NpmScanner.cs(762,27): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(873,30): warning CS8600: Converting null literal or possible null value to non-nullable type. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(1142,35): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(1154,13): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(1178,31): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\Forms\NpmHandlerPanel.cs(1628,47): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.DragDrop.cs(131,34): warning CS8600: Converting null literal or possible null value to non-nullable type. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\Registry\ContextMenuInstaller.cs(190,23): warning IL3000: 'System.Reflection.Assembly.Location' always returns an empty string for assemblies embedded in a single-file app. If the path to the app directory is needed, consider calling 'System.AppContext.BaseDirectory'. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+  OPTools -> C:\AI\COMPLETED\OPTools\OPTools\bin\Debug\net8.0-windows\win-x64\OPTools.dll
+
+Build succeeded.
+
+C:\AI\COMPLETED\OPTools\OPTools\Core\NpmScanner.cs(762,27): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(873,30): warning CS8600: Converting null literal or possible null value to non-nullable type. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(1142,35): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(1154,13): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.cs(1178,31): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\Forms\NpmHandlerPanel.cs(1628,47): warning CS8602: Dereference of a possibly null reference. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\MainForm.DragDrop.cs(131,34): warning CS8600: Converting null literal or possible null value to non-nullable type. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+C:\AI\COMPLETED\OPTools\OPTools\Registry\ContextMenuInstaller.cs(190,23): warning IL3000: 'System.Reflection.Assembly.Location' always returns an empty string for assemblies embedded in a single-file app. If the path to the app directory is needed, consider calling 'System.AppContext.BaseDirectory'. [C:\AI\COMPLETED\OPTools\OPTools\OPTools.csproj]
+    8 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:02.09

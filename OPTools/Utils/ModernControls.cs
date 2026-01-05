@@ -113,7 +113,19 @@ public class ModernButton : Button
 public class SidebarButton : Button
 {
     public string IconChar { get; set; } = "";
-    public bool IsActive { get; set; } = false;
+    private bool _isActive = false;
+    public bool IsActive 
+    { 
+        get => _isActive; 
+        set 
+        {
+            if (_isActive != value)
+            {
+                _isActive = value;
+                this.Invalidate();
+            }
+        }
+    }
     public Color ActiveColor { get; set; } = Color.FromArgb(0, 122, 204); // Blue
     public Color InactiveColor { get; set; } = Color.Transparent;
     public Color ActiveTextColor { get; set; } = Color.White;

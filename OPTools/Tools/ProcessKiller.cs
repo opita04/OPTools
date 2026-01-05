@@ -71,10 +71,12 @@ public static class ProcessKiller
                         proc.Kill();
                         proc.WaitForExit(5000);
                         result.ProcessesKilled++;
+                        OPTools.Utils.AuditLogger.LogProcessKill((uint)proc.Id, processName, true);
                     }
                     catch (Exception ex)
                     {
                         result.Errors.Add($"Failed to kill {processName} (PID: {proc.Id}): {ex.Message}");
+                        OPTools.Utils.AuditLogger.LogProcessKill((uint)proc.Id, processName, false);
                     }
                     finally
                     {
@@ -106,10 +108,12 @@ public static class ProcessKiller
                 proc.WaitForExit(5000);
                 result.ProcessesKilled = 1;
                 result.Success = true;
+                OPTools.Utils.AuditLogger.LogProcessKill((uint)processId, proc.ProcessName, true);
             }
             catch (Exception ex)
             {
                 result.Errors.Add($"Failed to kill process (PID: {processId}): {ex.Message}");
+                OPTools.Utils.AuditLogger.LogProcessKill((uint)processId, "Unknown", false);
             }
         });
 

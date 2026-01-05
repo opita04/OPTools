@@ -24,7 +24,24 @@ public static class ContextMenuInstaller
             }
             
             // Ensure the path is fully qualified and normalized
+            // Ensure the path is fully qualified and normalized
             exePath = Path.GetFullPath(exePath);
+
+            // Tier 1 Audit Fix: Validate EXE is not in a user-writable location
+            var exeDir = Path.GetDirectoryName(exePath) ?? "";
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            
+            bool isProtected = exeDir.StartsWith(programFiles, StringComparison.OrdinalIgnoreCase) ||
+                               exeDir.StartsWith(programFilesX86, StringComparison.OrdinalIgnoreCase);
+            
+            if (!isProtected)
+            {
+                System.Diagnostics.Debug.WriteLine($"WARNING: Context Menu installer target EXE not in protected location: {exePath}");
+                // We log it but allow it for now as this is a tool often run from portable locations. 
+                // In strict mode we would throw:
+                // throw new SecurityException("Cannot install context menu for executable outside Program Files.");
+            }
 
             using (RegistryKey? key = Microsoft.Win32.Registry.ClassesRoot.CreateSubKey(RegistryKeyPath))
             {

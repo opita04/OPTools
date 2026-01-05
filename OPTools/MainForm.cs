@@ -5,11 +5,13 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using OPTools.Core;
+using OPTools.Forms;
 using OPTools.Registry;
 using OPTools.Tools;
 using OPTools.Utils;
 
 using System.Text;
+using System.IO;
 
 namespace OPTools
 {
@@ -20,6 +22,7 @@ namespace OPTools
     private ModernButton _btnUnlockAll = null!;
     private ModernButton _btnKillProcess = null!;
     private ModernButton _btnDelete = null!;
+    private ModernButton _btnMove = null!;
     private ModernButton _btnRefresh = null!;
     private Label _lblStatus = null!;
     private ProgressBar _progressBar = null!;
@@ -36,6 +39,7 @@ namespace OPTools
     private SidebarButton _navProcesses = null!;
     private SidebarButton _navContextMenu = null!;
     private SidebarButton _navApplications = null!;
+    private SidebarButton _navNpmHandler = null!;
     private SidebarButton _navSettings = null!;
 
     // Theme Colors
@@ -72,6 +76,14 @@ namespace OPTools
     // Settings Panel
     private Panel _settingsContentPanel = null!;
     private FlowLayoutPanel _settingsButtonsPanel = null!;
+    private CheckBox _chkStartOnStartup = null!;
+    private CheckBox _chkMinimizeToTray = null!;
+
+    // NPM Handler Panel
+    private NpmHandlerPanel _npmHandlerPanel = null!;
+
+    // System Tray
+    private NotifyIcon _notifyIcon = null!;
 
 
 
@@ -98,17 +110,47 @@ namespace OPTools
         this.MinimumSize = new Size(800, 500);
         this.BackColor = _cBackground;
         this.ForeColor = _cText;
+        this.ShowInTaskbar = true;
         
-        // Set application icon
-        var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Icons", "chip_icon.ico");
-        if (!File.Exists(iconPath))
+        // Set application icon - load from embedded executable icon (set via ApplicationIcon in .csproj)
+        // This ensures the icon always appears in the taskbar
+        try
         {
-            // Try relative path from executable
-            iconPath = Path.Combine(Application.StartupPath, "Icons", "chip_icon.ico");
+            string? exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+            {
+                exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            }
+            
+            if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
+            {
+                // Extract icon from the executable itself (embedded via ApplicationIcon in .csproj)
+                Icon? extractedIcon = Icon.ExtractAssociatedIcon(exePath);
+                if (extractedIcon != null)
+                {
+                    this.Icon = extractedIcon;
+                }
+            }
         }
-        if (File.Exists(iconPath))
+        catch
         {
-            this.Icon = new Icon(iconPath);
+            // Fallback to file path if extraction fails
+            try
+            {
+                var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Icons", "chip_icon.ico");
+                if (!File.Exists(iconPath))
+                {
+                    iconPath = Path.Combine(Application.StartupPath, "Icons", "chip_icon.ico");
+                }
+                if (File.Exists(iconPath))
+                {
+                    this.Icon = new Icon(iconPath);
+                }
+            }
+            catch
+            {
+                // Use default icon if nothing works
+            }
         }
 
         // --- Sidebar ---
@@ -124,13 +166,27 @@ namespace OPTools
         _navUnlocker = CreateSidebarButton("File Unlocker", "\uE785", true);
         _navCleaner = CreateSidebarButton("System Cleaner", "\uE896");
         _navNetwork = CreateSidebarButton("Network Reset", "\uE968");
-        _navProcesses = CreateSidebarButton("Processes", "\uE90F");
-        _navContextMenu = CreateSidebarButton("Context Menu Manager", "\uE713");
+        _navProcesses = CreateSidebarButton("Kill Processes", "\uE90F");
+        _navContextMenu = CreateSidebarButton("Context Menu Manager", "\uE81C");
         _navApplications = CreateSidebarButton("Applications", "\uE7FC");
+        _navNpmHandler = CreateSidebarButton("Package Handler", "\uE74C");
+
+
+        // Add to sidebar (reverse order for Dock.Top)
         _navSettings = CreateSidebarButton("Settings", "\uE713");
+        _navSettings.Dock = DockStyle.Bottom;
+
+        Panel sidebarDivider = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 1,
+            BackColor = _cGridHeader
+        };
 
         // Add to sidebar (reverse order for Dock.Top)
         _sidebarPanel.Controls.Add(_navSettings);
+        _sidebarPanel.Controls.Add(sidebarDivider);
+        _sidebarPanel.Controls.Add(_navNpmHandler);
         _sidebarPanel.Controls.Add(_navContextMenu);
         _sidebarPanel.Controls.Add(_navProcesses);
         _sidebarPanel.Controls.Add(_navNetwork);
@@ -156,6 +212,7 @@ namespace OPTools
         _btnUnlockAll = CreateActionButton("Unlock All", "\uE72E", _cAccent);
         _btnKillProcess = CreateActionButton("Kill Process", "\uE71A", _cDanger);
         _btnDelete = CreateActionButton("Delete", "\uE74D", _cDanger);
+        _btnMove = CreateActionButton("Move", "\uE8DE", _cAccent);
         
         _btnRefresh = new ModernButton
         {
@@ -224,6 +281,9 @@ namespace OPTools
         // Disable WinForms OLE drag and drop to allow WM_DROPFILES to work
         this.AllowDrop = false;
         _contentPanel.AllowDrop = false;
+
+        // Handle window state change for system tray
+        this.Resize += MainForm_Resize;
         // this.DragEnter += MainForm_DragEnter;
         // this.DragDrop += MainForm_DragDrop;
         // _contentPanel.DragEnter += MainForm_DragEnter;
@@ -237,6 +297,9 @@ namespace OPTools
         InitializeProcessesPanel();
         InitializeContextMenuPanel();
         InitializeSettingsPanel();
+        InitializeNpmHandlerPanel();
+        InitializeSystemTray();
+        LoadSettings();
 
         // Wire up Navigation Events
         _navUnlocker.Click += (s, e) => ShowView("unlocker");
@@ -245,12 +308,14 @@ namespace OPTools
         _navProcesses.Click += (s, e) => ShowView("processes");
         _navContextMenu.Click += (s, e) => ShowView("contextmenu");
         _navApplications.Click += (s, e) => ShowView("applications");
+        _navNpmHandler.Click += (s, e) => ShowView("npmhandler");
         _navSettings.Click += (s, e) => ShowView("settings");
         
         // Wire up Action Buttons
         _btnUnlockAll.Click += BtnUnlockAll_Click;
         _btnKillProcess.Click += BtnKillProcess_Click;
         _btnDelete.Click += BtnDelete_Click;
+        _btnMove.Click += BtnMove_Click;
         _btnRefresh.Click += BtnRefresh_Click;
 
         // Initialize Context Menu Items
@@ -415,7 +480,7 @@ namespace OPTools
 
         Label lblTitle = new Label
         {
-            Text = "Process Tools",
+            Text = "Kill Processes",
             Font = new Font("Segoe UI", 16, FontStyle.Bold),
             ForeColor = _cText,
             AutoSize = true,
@@ -463,6 +528,41 @@ namespace OPTools
             Padding = new Padding(0, 0, 0, 20)
         };
 
+        Panel settingsOptionsPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 150,
+            Padding = new Padding(0, 0, 0, 20),
+            BackColor = _cBackground
+        };
+
+        // Start on Startup checkbox
+        _chkStartOnStartup = new CheckBox
+        {
+            Text = "Start on Windows startup",
+            ForeColor = _cText,
+            Font = new Font("Segoe UI", 11),
+            AutoSize = true,
+            Location = new Point(0, 20),
+            BackColor = _cBackground
+        };
+        _chkStartOnStartup.CheckedChanged += ChkStartOnStartup_CheckedChanged;
+
+        // Minimize to System Tray checkbox
+        _chkMinimizeToTray = new CheckBox
+        {
+            Text = "Minimize to system tray",
+            ForeColor = _cText,
+            Font = new Font("Segoe UI", 11),
+            AutoSize = true,
+            Location = new Point(0, 60),
+            BackColor = _cBackground
+        };
+        _chkMinimizeToTray.CheckedChanged += ChkMinimizeToTray_CheckedChanged;
+
+        settingsOptionsPanel.Controls.Add(_chkStartOnStartup);
+        settingsOptionsPanel.Controls.Add(_chkMinimizeToTray);
+
         _settingsButtonsPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -479,8 +579,144 @@ namespace OPTools
         AddSettingsButton("About", "\uE946", (s, e) => MenuAbout_Click(s, e));
 
         _settingsContentPanel.Controls.Add(_settingsButtonsPanel);
+        _settingsContentPanel.Controls.Add(settingsOptionsPanel);
         _settingsContentPanel.Controls.Add(lblTitle);
         _contentPanel.Controls.Add(_settingsContentPanel);
+    }
+
+    private void InitializeNpmHandlerPanel()
+    {
+        _npmHandlerPanel = new NpmHandlerPanel
+        {
+            Visible = false
+        };
+        _contentPanel.Controls.Add(_npmHandlerPanel);
+    }
+
+    private void InitializeSystemTray()
+    {
+        Icon? trayIcon = this.Icon;
+        if (trayIcon == null)
+        {
+            // Try to load from embedded executable icon
+            try
+            {
+                string? exePath = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                }
+                
+                if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
+                {
+                    trayIcon = Icon.ExtractAssociatedIcon(exePath);
+                }
+            }
+            catch
+            {
+                // Fallback to file path
+            }
+            
+            if (trayIcon == null)
+            {
+                var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Icons", "chip_icon.ico");
+                if (!File.Exists(iconPath))
+                {
+                    iconPath = Path.Combine(Application.StartupPath, "Icons", "chip_icon.ico");
+                }
+                if (File.Exists(iconPath))
+                {
+                    trayIcon = new Icon(iconPath);
+                }
+                else
+                {
+                    trayIcon = SystemIcons.Application;
+                }
+            }
+        }
+
+        _notifyIcon = new NotifyIcon
+        {
+            Icon = trayIcon,
+            Text = "OPTools",
+            Visible = false
+        };
+
+        _notifyIcon.DoubleClick += (s, e) =>
+        {
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+            this.Activate();
+        };
+
+        ContextMenuStrip trayMenu = new ContextMenuStrip();
+        trayMenu.BackColor = _cSidebar;
+        trayMenu.ForeColor = _cText;
+
+        ToolStripMenuItem showItem = new ToolStripMenuItem("Show OPTools");
+        showItem.Click += (s, e) =>
+        {
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+            this.Activate();
+        };
+
+        ToolStripMenuItem exitItem = new ToolStripMenuItem("Exit");
+        exitItem.Click += (s, e) => Application.Exit();
+
+        trayMenu.Items.Add(showItem);
+        trayMenu.Items.Add(new ToolStripSeparator());
+        trayMenu.Items.Add(exitItem);
+
+        _notifyIcon.ContextMenuStrip = trayMenu;
+    }
+
+    private void LoadSettings()
+    {
+        // Load settings and sync with actual registry state
+        bool startOnStartup = SettingsManager.GetStartOnStartup();
+        bool isStartupEnabled = StartupManager.IsStartupEnabled();
+
+        // If settings say enabled but registry doesn't, enable it
+        // If settings say disabled but registry is enabled, disable it
+        if (startOnStartup && !isStartupEnabled)
+        {
+            StartupManager.EnableStartup();
+        }
+        else if (!startOnStartup && isStartupEnabled)
+        {
+            StartupManager.DisableStartup();
+        }
+
+        _chkStartOnStartup.Checked = startOnStartup;
+        _chkMinimizeToTray.Checked = SettingsManager.GetMinimizeToTray();
+    }
+
+    private void ChkStartOnStartup_CheckedChanged(object? sender, EventArgs e)
+    {
+        bool enabled = _chkStartOnStartup.Checked;
+        SettingsManager.SetStartOnStartup(enabled);
+
+        if (enabled)
+        {
+            if (!StartupManager.EnableStartup())
+            {
+                MessageBox.Show("Failed to enable startup. Please try again.", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _chkStartOnStartup.Checked = false;
+            }
+        }
+        else
+        {
+            StartupManager.DisableStartup();
+        }
+    }
+
+    private void ChkMinimizeToTray_CheckedChanged(object? sender, EventArgs e)
+    {
+        bool enabled = _chkMinimizeToTray.Checked;
+        SettingsManager.SetMinimizeToTray(enabled);
+        _notifyIcon.Visible = enabled;
     }
 
     private void AddProcessButton(string text, string icon, EventHandler action)
@@ -579,6 +815,7 @@ namespace OPTools
         _navProcesses.IsActive = viewName == "processes";
         _navContextMenu.IsActive = viewName == "contextmenu";
         _navApplications.IsActive = viewName == "applications";
+        _navNpmHandler.IsActive = viewName == "npmhandler";
         _navSettings.IsActive = viewName == "settings";
 
         // Show/hide panels
@@ -591,7 +828,13 @@ namespace OPTools
         _networkContentPanel.Visible = viewName == "network";
         _processesContentPanel.Visible = viewName == "processes";
         _contextMenuContentPanel.Visible = viewName == "contextmenu";
+        _npmHandlerPanel.Visible = viewName == "npmhandler";
         _settingsContentPanel.Visible = viewName == "settings";
+
+        if (viewName == "npmhandler")
+        {
+            _npmHandlerPanel.Initialize();
+        }
 
         if (viewName == "contextmenu")
         {
@@ -851,10 +1094,12 @@ namespace OPTools
         _btnUnlockAll.Margin = new Padding(0, 0, 10, 0);
         _btnKillProcess.Margin = new Padding(0, 0, 10, 0);
         _btnDelete.Margin = new Padding(0, 0, 10, 0);
+        _btnMove.Margin = new Padding(0, 0, 10, 0);
 
         flow.Controls.Add(_btnUnlockAll);
         flow.Controls.Add(_btnKillProcess);
         flow.Controls.Add(_btnDelete);
+        flow.Controls.Add(_btnMove);
 
         _headerPanel.Controls.Add(flow);
         _headerPanel.Controls.Add(_btnRefresh); // Refresh docked Right
@@ -956,6 +1201,7 @@ namespace OPTools
         _btnUnlockAll.Enabled = false;
         _btnKillProcess.Enabled = false;
         _btnDelete.Enabled = false;
+        _btnMove.Enabled = false;
 
         try
         {
@@ -985,6 +1231,7 @@ namespace OPTools
                     _btnUnlockAll.Enabled = locks.Count > 0;
                     _btnKillProcess.Enabled = locks.Count > 0;
                     _btnDelete.Enabled = true;
+                    _btnMove.Enabled = true;
                 });
             });
         }
@@ -1019,6 +1266,7 @@ namespace OPTools
         _btnUnlockAll.Enabled = false;
         _btnKillProcess.Enabled = false;
         _btnDelete.Enabled = false;
+        _btnMove.Enabled = false;
 
         try
         {
@@ -1051,6 +1299,7 @@ namespace OPTools
             _btnUnlockAll.Enabled = true;
             _btnKillProcess.Enabled = true;
             _btnDelete.Enabled = true;
+            _btnMove.Enabled = true;
         }
     }
 
@@ -1097,6 +1346,7 @@ namespace OPTools
         _btnUnlockAll.Enabled = false;
         _btnKillProcess.Enabled = false;
         _btnDelete.Enabled = false;
+        _btnMove.Enabled = false;
 
         try
         {
@@ -1126,6 +1376,7 @@ namespace OPTools
             _btnUnlockAll.Enabled = true;
             _btnKillProcess.Enabled = true;
             _btnDelete.Enabled = true;
+            _btnMove.Enabled = true;
         }
     }
 
@@ -1163,37 +1414,126 @@ namespace OPTools
         _btnUnlockAll.Enabled = false;
         _btnKillProcess.Enabled = false;
         _btnDelete.Enabled = false;
+        _btnMove.Enabled = false;
 
         try
         {
-            bool success = await Task.Run(() => _unlocker.DeleteFileOrFolder());
+            await Task.Run(() => _unlocker.DeleteFileOrFolder());
 
-            if (success)
-            {
-                _lblStatus.Text = "Successfully deleted";
-                MessageBox.Show("File/folder deleted successfully.", "Success",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                this.Close();
-            }
-            else
-            {
-                _lblStatus.Text = "Delete failed. Try unlocking handles first.";
-                MessageBox.Show("Failed to delete file/folder. Some handles may still be locked.",
-                    "Delete Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
+            _lblStatus.Text = "Successfully deleted";
+            MessageBox.Show("File/folder deleted successfully.", "Success",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+
         }
         catch (Exception ex)
         {
             _lblStatus.Text = $"Error: {ex.Message}";
-            MessageBox.Show($"Error deleting: {ex.Message}", "Error",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            
+            DialogResult scheduleResult = MessageBox.Show(
+                $"{ex.Message}\n\nWould you like to schedule this item for deletion on the next computer restart?",
+                "Delete Failed",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Error);
+
+            if (scheduleResult == DialogResult.Yes)
+            {
+                try
+                {
+                    if (_unlocker.ScheduleDeleteOnReboot())
+                    {
+                        MessageBox.Show("The item has been scheduled for deletion on the next restart.", 
+                            "Scheduled", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        this.Close();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to schedule deletion. Ensure you are running as Administrator.", 
+                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                catch (Exception scheduleEx)
+                {
+                    MessageBox.Show($"Failed to schedule deletion: {scheduleEx.Message}", 
+                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
+
         finally
         {
             _progressBar.Visible = false;
             _btnUnlockAll.Enabled = true;
             _btnKillProcess.Enabled = true;
             _btnDelete.Enabled = true;
+            _btnMove.Enabled = true;
+        }
+    }
+
+    private async void BtnMove_Click(object? sender, EventArgs e)
+    {
+        if (_unlocker == null)
+            return;
+
+        if (PathHelper.IsSystemPath(_targetPath))
+        {
+            DialogResult systemWarning = MessageBox.Show(
+                $"Warning: {_targetPath} appears to be in a system directory.\n\n" +
+                "Moving system files may cause system instability or prevent Windows from functioning.\n\n" +
+                "Are you absolutely sure you want to continue?",
+                "System Path Warning",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+
+            if (systemWarning != DialogResult.Yes)
+                return;
+        }
+
+        using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+        {
+            dialog.Description = "Select destination folder:";
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                DialogResult result = MessageBox.Show(
+                    $"Move: {_targetPath}\nTo: {dialog.SelectedPath}?\n\n" +
+                    "This will unlock all handles and move the file/folder.",
+                    "Confirm Move",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result != DialogResult.Yes)
+                    return;
+
+                _progressBar.Visible = true;
+                _lblStatus.Text = "Moving...";
+                _btnUnlockAll.Enabled = false;
+                _btnKillProcess.Enabled = false;
+                _btnDelete.Enabled = false;
+                _btnMove.Enabled = false;
+
+                try
+                {
+                    await Task.Run(() => _unlocker.MoveFileOrFolder(dialog.SelectedPath));
+
+                    _lblStatus.Text = "Successfully moved";
+                    MessageBox.Show("File/folder moved successfully.", "Success",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                }
+                catch (Exception ex)
+                {
+                    _lblStatus.Text = $"Error: {ex.Message}";
+                    MessageBox.Show(ex.Message, "Move Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+
+                finally
+                {
+                    _progressBar.Visible = false;
+                    _btnUnlockAll.Enabled = true;
+                    _btnKillProcess.Enabled = true;
+                    _btnDelete.Enabled = true;
+                    _btnMove.Enabled = true;
+                }
+            }
         }
     }
 
@@ -1634,6 +1974,24 @@ namespace OPTools
         return form;
     }
 
+    private void MainForm_Resize(object? sender, EventArgs e)
+    {
+        if (this.WindowState == FormWindowState.Minimized && _chkMinimizeToTray.Checked)
+        {
+            this.Hide();
+            _notifyIcon.Visible = true;
+        }
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (_notifyIcon != null)
+        {
+            _notifyIcon.Visible = false;
+            _notifyIcon.Dispose();
+        }
+        base.OnFormClosing(e);
+    }
 
 }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
@@ -70,6 +71,7 @@ public static class PathHelper
                 Path.Combine(root, "program files"),
                 Path.Combine(root, "program files (x86)"),
                 Path.Combine(root, "programdata"),
+                Path.Combine(root, "users"), // Protect Users folder generally
                 Path.Combine(root, "system32"),
                 Path.Combine(root, "syswow64")
             };
@@ -90,6 +92,35 @@ public static class PathHelper
         }
     }
 
+    public static bool IsDangerousPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        try
+        {
+            var normalized = NormalizePath(path).ToLowerInvariant();
+            
+            // Block root of any drive (e.g. "c:\" or "c:")
+            // NormalizePath strips trailing slashes, so "C:\" becomes "C:"
+            if (normalized.Length <= 3 && normalized.Contains(":")) 
+                return true;
+            
+            // Block user profile root
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).ToLowerInvariant();
+            if (normalized.Equals(userProfile, StringComparison.OrdinalIgnoreCase)) 
+                return true;
+            
+            // Re-use system path check
+            return IsSystemPath(path);
+        }
+        catch (Exception ex)
+        {
+            // If we can't determine safety, assume dangerous
+            System.Diagnostics.Debug.WriteLine($"Error checking dangerous path: {ex.Message}");
+            return true;
+        }
+    }
+
     public static string ConvertDosDevicePathToNormalPath(string dosDevicePath)
     {
         if (string.IsNullOrWhiteSpace(dosDevicePath))
@@ -97,29 +128,32 @@ public static class PathHelper
 
         try
         {
+            var deviceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                try
+                {
+                    string driveLetter = drive.Name.TrimEnd('\\'); // "C:"
+                    StringBuilder sb = new StringBuilder(256);
+                    if (WindowsApi.QueryDosDevice(driveLetter, sb, 256))
+                    {
+                        string devicePath = sb.ToString();
+                        deviceMap[devicePath] = driveLetter;
+                    }
+                }
+                catch { }
+            }
+
             if (dosDevicePath.StartsWith("\\??\\"))
             {
                 dosDevicePath = dosDevicePath.Substring(4);
             }
-            else if (dosDevicePath.StartsWith("\\Device\\"))
+            
+            foreach (var kvp in deviceMap)
             {
-                string deviceName = dosDevicePath.Substring(8);
-                int firstBackslash = deviceName.IndexOf('\\');
-                if (firstBackslash > 0)
+                if (dosDevicePath.StartsWith(kvp.Key, StringComparison.OrdinalIgnoreCase))
                 {
-                    string drive = deviceName.Substring(0, firstBackslash);
-                    string path = deviceName.Substring(firstBackslash);
-
-                    StringBuilder sb = new StringBuilder(256);
-                    if (WindowsApi.QueryDosDevice(drive, sb, 256))
-                    {
-                        string realPath = sb.ToString();
-                        if (realPath.StartsWith("\\??\\"))
-                        {
-                            realPath = realPath.Substring(4);
-                        }
-                        return realPath + path;
-                    }
+                    return kvp.Value + dosDevicePath.Substring(kvp.Key.Length);
                 }
             }
 

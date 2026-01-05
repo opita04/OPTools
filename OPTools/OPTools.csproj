@@ -11,12 +11,16 @@
     <RootNamespace>OPTools</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Icons\chip_icon.ico</ApplicationIcon>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishReadyToRun>true</PublishReadyToRun>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <Product>OPTools</Product>
+    <Title>OPTools</Title>
+    <Description>Operating System Tools</Description>
+    <Company>OPTools</Company>
+    <Authors>OPTools</Authors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +31,10 @@
 
   <ItemGroup>
     <PackageReference Include="Svg" Version="3.4.7" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Serilog" Version="3.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
   </ItemGroup>
 
 </Project>

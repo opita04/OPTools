@@ -23,6 +23,11 @@ public class HandleEnumerator
     private readonly string _targetPath;
     private readonly bool _isDirectory;
 
+    private const uint INITIAL_BUFFER_SIZE = 0x10000;
+    private const uint BUFFER_INCREMENT = 0x1000;
+    private const uint OBJECT_NAME_BUFFER_SIZE = 0x1000;
+    private const int MAX_BUFFER_RETRIES = 5;
+
     public HandleEnumerator(string targetPath)
     {
         _targetPath = PathHelper.NormalizePath(targetPath);
@@ -38,16 +43,126 @@ public class HandleEnumerator
             return locks;
         }
 
+        // Use Restart Manager API - the official Windows mechanism for file lock detection
+        try
+        {
+            List<string> filesToCheck = new List<string>();
+
+            if (_isDirectory)
+            {
+                // For directories, we need to check all files within
+                try
+                {
+                    filesToCheck.AddRange(Directory.GetFiles(_targetPath, "*", SearchOption.AllDirectories));
+                }
+                catch
+                {
+                    // If we can't enumerate, just check the directory itself
+                    filesToCheck.Add(_targetPath);
+                }
+            }
+            else
+            {
+                filesToCheck.Add(_targetPath);
+            }
+
+            // Check each file using Restart Manager
+            foreach (string file in filesToCheck)
+            {
+                var fileLocks = GetLockingProcesses(file);
+                locks.AddRange(fileLocks);
+            }
+        }
+        catch
+        {
+            // Fall back to the old method if Restart Manager fails
+            locks = EnumerateLocksLegacy();
+        }
+
+        return locks.DistinctBy(l => new { l.ProcessId, l.FilePath }).ToList();
+    }
+
+    private List<LockInfo> GetLockingProcesses(string filePath)
+    {
+        List<LockInfo> locks = new List<LockInfo>();
+
+        uint sessionHandle;
+        string sessionKey = Guid.NewGuid().ToString();
+
+        int result = WindowsApi.RmStartSession(out sessionHandle, 0, sessionKey);
+        if (result != 0)
+        {
+            return locks;
+        }
+
+        try
+        {
+            string[] resources = new string[] { filePath };
+            result = WindowsApi.RmRegisterResources(sessionHandle, (uint)resources.Length, resources, 0, null, 0, null);
+
+            if (result != 0)
+            {
+                return locks;
+            }
+
+            uint pnProcInfoNeeded = 0;
+            uint pnProcInfo = 0;
+            uint lpdwRebootReasons = 0;
+
+            // First call to get the count
+            result = WindowsApi.RmGetList(sessionHandle, out pnProcInfoNeeded, ref pnProcInfo, null, out lpdwRebootReasons);
+
+            if (result == WindowsApi.ERROR_MORE_DATA && pnProcInfoNeeded > 0)
+            {
+                WindowsApi.RM_PROCESS_INFO[] processInfo = new WindowsApi.RM_PROCESS_INFO[pnProcInfoNeeded];
+                pnProcInfo = pnProcInfoNeeded;
+
+                result = WindowsApi.RmGetList(sessionHandle, out pnProcInfoNeeded, ref pnProcInfo, processInfo, out lpdwRebootReasons);
+
+                if (result == 0)
+                {
+                    for (int i = 0; i < pnProcInfo; i++)
+                    {
+                        try
+                        {
+                            locks.Add(new LockInfo
+                            {
+                                ProcessId = (uint)processInfo[i].Process.dwProcessId,
+                                ProcessName = processInfo[i].strAppName,
+                                Handle = IntPtr.Zero,
+                                FilePath = filePath,
+                                HandleType = processInfo[i].ApplicationType.ToString()
+                            });
+                        }
+                        catch(Exception ex) { System.Diagnostics.Debug.WriteLine($"Error processing process info: {ex.Message}"); }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            WindowsApi.RmEndSession(sessionHandle);
+        }
+
+        return locks;
+    }
+
+    private List<LockInfo> EnumerateLocksLegacy()
+    {
+        List<LockInfo> locks = new List<LockInfo>();
+
         WindowsApi.EnablePrivilege(WindowsApi.SE_DEBUG_NAME);
         WindowsApi.EnablePrivilege(WindowsApi.SE_BACKUP_NAME);
 
-        uint bufferSize = 0x10000;
+        uint bufferSize = INITIAL_BUFFER_SIZE;
         IntPtr buffer = IntPtr.Zero;
 
         try
         {
-            while (true)
+            int retryCount = 0;
+            while (retryCount < MAX_BUFFER_RETRIES)
             {
+                retryCount++;
                 buffer = Marshal.AllocHGlobal((int)bufferSize);
                 uint returnLength = 0;
 
@@ -66,13 +181,19 @@ public class HandleEnumerator
                 {
                     Marshal.FreeHGlobal(buffer);
                     buffer = IntPtr.Zero;
-                    bufferSize = returnLength + 0x1000;
+                    bufferSize = returnLength + BUFFER_INCREMENT;
                 }
                 else
                 {
                     Marshal.FreeHGlobal(buffer);
                     return locks;
                 }
+            }
+
+            if (retryCount >= MAX_BUFFER_RETRIES)
+            {
+                System.Diagnostics.Debug.WriteLine("EnumerateLocksLegacy: Max buffer retries exceeded.");
+                return locks;
             }
 
             WindowsApi.SYSTEM_HANDLE_INFORMATION handleInfo = Marshal.PtrToStructure<WindowsApi.SYSTEM_HANDLE_INFORMATION>(buffer);
@@ -101,8 +222,9 @@ public class HandleEnumerator
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    System.Diagnostics.Debug.WriteLine($"Error processing handle: {ex.Message}");
                 }
 
                 handlePtr = new IntPtr(handlePtr.ToInt64() + Marshal.SizeOf(typeof(WindowsApi.SYSTEM_HANDLE)));
@@ -116,7 +238,7 @@ public class HandleEnumerator
             }
         }
 
-        return locks.DistinctBy(l => new { l.ProcessId, l.Handle }).ToList();
+        return locks;
     }
 
     private bool IsPathLocked(string filePath)
@@ -198,7 +320,7 @@ public class HandleEnumerator
 
     private string? GetObjectName(IntPtr handle)
     {
-        uint bufferSize = 0x1000;
+        uint bufferSize = OBJECT_NAME_BUFFER_SIZE;
         IntPtr buffer = IntPtr.Zero;
 
         try
@@ -225,8 +347,9 @@ public class HandleEnumerator
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"Error querying object: {ex.Message}");
         }
         finally
         {

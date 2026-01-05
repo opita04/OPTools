@@ -101,6 +101,9 @@ public static class NetworkReset
                 string output = proc.StandardOutput.ReadToEnd();
                 string error = proc.StandardError.ReadToEnd();
                 
+                bool success = proc.ExitCode == 0;
+                OPTools.Utils.AuditLogger.LogNetworkReset($"{command} {arguments}", success);
+                
                 if (proc.ExitCode != 0 && !string.IsNullOrWhiteSpace(error))
                 {
                     result.Errors.Add($"{command} {arguments}: {error}");
@@ -110,6 +113,7 @@ public static class NetworkReset
         catch (Exception ex)
         {
             result.Errors.Add($"Failed to run {command} {arguments}: {ex.Message}");
+            OPTools.Utils.AuditLogger.LogNetworkReset($"{command} {arguments}", false);
         }
     }
 }

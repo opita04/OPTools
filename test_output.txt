@@ -1,0 +1,29 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  OPTools -> C:\AI\COMPLETED\OPTools\OPTools\bin\Debug\net8.0-windows\win-x64\OPTools.dll
+  OPTools.Tests -> C:\AI\COMPLETED\OPTools\OPTools.Tests\bin\Debug\net8.0-windows\OPTools.Tests.dll
+Test run for C:\AI\COMPLETED\OPTools\OPTools.Tests\bin\Debug\net8.0-windows\OPTools.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed OPTools.Tests.PathHelperTests.IsDangerousPath_ShouldIdentifySystemPaths(path: "C:\\", expected: True) [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: True
+Actual:   False
+  Stack Trace:
+     at OPTools.Tests.PathHelperTests.IsDangerousPath_ShouldIdentifySystemPaths(String path, Boolean expected) in C:\AI\COMPLETED\OPTools\OPTools.Tests\PathHelperTests.cs:line 19
+   at InvokeStub_PathHelperTests.IsDangerousPath_ShouldIdentifySystemPaths(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed OPTools.Tests.PathHelperTests.IsValidPath_ShouldValidatePathStructure(path: "relative\\path", expected: False) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: False
+Actual:   True
+  Stack Trace:
+     at OPTools.Tests.PathHelperTests.IsValidPath_ShouldValidatePathStructure(String path, Boolean expected) in C:\AI\COMPLETED\OPTools\OPTools.Tests\PathHelperTests.cs:line 40
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+
+Failed!  - Failed:     2, Passed:    10, Skipped:     0, Total:    12, Duration: 38 ms - OPTools.Tests.dll (net8.0)

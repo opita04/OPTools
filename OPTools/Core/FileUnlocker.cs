@@ -143,11 +143,17 @@ public class FileUnlocker
         }
     }
 
-    public bool DeleteFileOrFolder()
+    public void DeleteFileOrFolder()
     {
         if (!PathHelper.IsValidPath(_targetPath))
         {
-            return false;
+            throw new ArgumentException("Invalid path specified");
+        }
+
+        // Tier 1 Audit Fix: Block protected paths
+        if (PathHelper.IsDangerousPath(_targetPath))
+        {
+            throw new InvalidOperationException($"Cannot delete protected path: {_targetPath}");
         }
 
         UnlockResult unlockResult = UnlockAll(false);
@@ -165,19 +171,115 @@ public class FileUnlocker
             {
                 File.SetAttributes(_targetPath, FileAttributes.Normal);
                 File.Delete(_targetPath);
-                return true;
+                AuditLogger.LogDelete(_targetPath, true);
             }
             else if (Directory.Exists(_targetPath))
             {
                 DeleteDirectoryRecursive(_targetPath);
-                return true;
+                AuditLogger.LogDelete(_targetPath, true);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            string errorMsg = $"Failed to delete: {ex.Message}";
+            
+            try
+            {
+                var currentLocks = _enumerator.EnumerateLocks();
+                if (currentLocks.Count > 0)
+                {
+                    errorMsg += "\n\nProcesses still holding locks:";
+                    foreach (var lockInfo in currentLocks)
+                    {
+                        errorMsg += $"\n• {lockInfo.ProcessName} (PID: {lockInfo.ProcessId})";
+                    }
+                }
+            }
+            catch (Exception innerEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error enumerating locks: {innerEx.Message}");
+            }
+
+            if (!unlockResult.Success && unlockResult.Errors.Count > 0)
+            {
+                errorMsg += $"\n\nUnlock errors: {string.Join("; ", unlockResult.Errors)}";
+            }
+            throw new IOException(errorMsg, ex);
+        }
+    }
+
+    public void MoveFileOrFolder(string destinationPath)
+    {
+        if (!PathHelper.IsValidPath(_targetPath))
+        {
+            throw new ArgumentException("Invalid path specified");
         }
 
-        return false;
+        // Tier 1 Audit Fix: Block protected paths
+        if (PathHelper.IsDangerousPath(_targetPath))
+        {
+            throw new InvalidOperationException($"Cannot move protected path: {_targetPath}");
+        }
+
+        UnlockResult unlockResult = UnlockAll(false);
+
+        if (!unlockResult.Success)
+        {
+            unlockResult = UnlockAll(true);
+        }
+
+        Thread.Sleep(200);
+
+        try
+        {
+            if (File.Exists(_targetPath))
+            {
+                string destFile = Path.Combine(destinationPath, Path.GetFileName(_targetPath));
+                if (File.Exists(destFile))
+                {
+                     File.Delete(destFile);
+                }
+                File.Move(_targetPath, destFile);
+            }
+            else if (Directory.Exists(_targetPath))
+            {
+                string destDir = Path.Combine(destinationPath, new DirectoryInfo(_targetPath).Name);
+                if (Directory.Exists(destDir))
+                {
+                    // If destination directory exists, we might need to merge or fail.
+                    // For simplicity, let's try to move.
+                }
+                Directory.Move(_targetPath, destDir);
+            }
+            AuditLogger.LogOperation("MOVE", $"{_targetPath} -> {destinationPath}", true);
+        }
+        catch (Exception ex)
+        {
+            string errorMsg = $"Failed to move: {ex.Message}";
+
+            try
+            {
+                var currentLocks = _enumerator.EnumerateLocks();
+                if (currentLocks.Count > 0)
+                {
+                    errorMsg += "\n\nProcesses still holding locks:";
+                    foreach (var lockInfo in currentLocks)
+                    {
+                        errorMsg += $"\n• {lockInfo.ProcessName} (PID: {lockInfo.ProcessId})";
+                    }
+                }
+            }
+            catch (Exception innerEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error enumerating locks: {innerEx.Message}");
+            }
+
+            if (!unlockResult.Success && unlockResult.Errors.Count > 0)
+            {
+                errorMsg += $"\n\nUnlock errors: {string.Join("; ", unlockResult.Errors)}";
+            }
+            throw new IOException(errorMsg, ex);
+        }
     }
 
     private void DeleteDirectoryRecursive(string directoryPath)
@@ -215,6 +317,51 @@ public class FileUnlocker
             {
             }
         }
+    }
+
+    public bool ScheduleDeleteOnReboot()
+    {
+        if (!PathHelper.IsValidPath(_targetPath))
+        {
+             throw new ArgumentException("Invalid path specified");
+        }
+
+        if (File.Exists(_targetPath))
+        {
+            return WindowsApi.MoveFileEx(_targetPath, null, WindowsApi.MOVEFILE_DELAY_UNTIL_REBOOT);
+        }
+        else if (Directory.Exists(_targetPath))
+        {
+            return ScheduleDirectoryDeleteOnReboot(_targetPath);
+        }
+        return false;
+    }
+
+    private bool ScheduleDirectoryDeleteOnReboot(string dirPath)
+    {
+        bool success = true;
+        try
+        {
+            foreach (string file in Directory.GetFiles(dirPath))
+            {
+                if (!WindowsApi.MoveFileEx(file, null, WindowsApi.MOVEFILE_DELAY_UNTIL_REBOOT))
+                    success = false;
+            }
+
+            foreach (string subDir in Directory.GetDirectories(dirPath))
+            {
+                if (!ScheduleDirectoryDeleteOnReboot(subDir))
+                    success = false;
+            }
+
+            if (!WindowsApi.MoveFileEx(dirPath, null, WindowsApi.MOVEFILE_DELAY_UNTIL_REBOOT))
+                success = false;
+        }
+        catch
+        {
+            return false;
+        }
+        return success;
     }
 
     public List<LockInfo> GetLocks()

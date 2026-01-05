@@ -52,7 +52,10 @@ public static class SystemCleaner
         {
             try
             {
-                string[] drives = { "C", "D" };
+                var drives = DriveInfo.GetDrives()
+                    .Where(d => d.IsReady && d.DriveType == DriveType.Fixed)
+                    .Select(d => d.Name.TrimEnd('\\'))
+                    .ToArray();
                 
                 foreach (string drive in drives)
                 {

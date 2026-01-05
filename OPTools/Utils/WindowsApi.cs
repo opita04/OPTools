@@ -145,6 +145,17 @@ public static class WindowsApi
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern uint GetLastError();
 
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool MoveFileEx(
+        string lpExistingFileName,
+        string? lpNewFileName,
+        uint dwFlags);
+
+    public const uint MOVEFILE_REPLACE_EXISTING = 0x00000001;
+    public const uint MOVEFILE_COPY_ALLOWED = 0x00000002;
+    public const uint MOVEFILE_DELAY_UNTIL_REBOOT = 0x00000004;
+    public const uint MOVEFILE_WRITE_THROUGH = 0x00000008;
+
     // Advapi32 Functions
     [DllImport("advapi32.dll", SetLastError = true)]
     public static extern bool OpenProcessToken(
@@ -232,5 +243,56 @@ public static class WindowsApi
 
     [DllImport("shell32.dll", SetLastError = true)]
     public static extern void DragFinish(IntPtr hDrop);
+
+    // Restart Manager API - for reliable file lock detection
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    public static extern int RmStartSession(out uint pSessionHandle, int dwSessionFlags, string strSessionKey);
+
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    public static extern int RmRegisterResources(uint pSessionHandle, uint nFiles, string[] rgsFilenames,
+        uint nApplications, RM_UNIQUE_PROCESS[]? rgApplications, uint nServices, string[]? rgsServiceNames);
+
+    [DllImport("rstrtmgr.dll")]
+    public static extern int RmGetList(uint dwSessionHandle, out uint pnProcInfoNeeded, ref uint pnProcInfo,
+        [In, Out] RM_PROCESS_INFO[]? rgAffectedApps, out uint lpdwRebootReasons);
+
+    [DllImport("rstrtmgr.dll")]
+    public static extern int RmEndSession(uint pSessionHandle);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RM_UNIQUE_PROCESS
+    {
+        public int dwProcessId;
+        public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct RM_PROCESS_INFO
+    {
+        public RM_UNIQUE_PROCESS Process;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string strAppName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+        public string strServiceShortName;
+        public RM_APP_TYPE ApplicationType;
+        public uint AppStatus;
+        public uint TSSessionId;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool bRestartable;
+    }
+
+    public enum RM_APP_TYPE
+    {
+        RmUnknownApp = 0,
+        RmMainWindow = 1,
+        RmOtherWindow = 2,
+        RmService = 3,
+        RmExplorer = 4,
+        RmConsole = 5,
+        RmCritical = 1000
+    }
+
+    public const int RmRebootReasonNone = 0;
+    public const int ERROR_MORE_DATA = 234;
 }
 
