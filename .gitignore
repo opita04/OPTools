@@ -78,3 +78,8 @@ publish/
 *.svclog
 *.scc
 
+# Custom
+[Rr]ebuild/
+nul
+
+

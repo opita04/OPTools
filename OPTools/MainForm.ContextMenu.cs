@@ -19,6 +19,7 @@ namespace OPTools
         private TabControl _ctxTabControl = null!;
         private ListView _ctxListView = null!;
         private ModernButton _ctxBtnRefresh = null!;
+        private ModernButton _ctxBtnEdit = null!;
         private ModernButton _ctxBtnDelete = null!;
         private Label _ctxLblStatus = null!;
         private TextBox _ctxTxtAppPath = null!;
@@ -108,19 +109,32 @@ namespace OPTools
             };
             _ctxBtnRefresh.Click += (s, e) => RefreshContextEntries();
             
+            _ctxBtnEdit = new ModernButton
+            {
+                Text = "Edit Selected",
+                IconChar = "\uE70F",
+                BackColor = _cAccent,
+                CornerBackColor = _cBackground,
+                Location = new Point(130, 0),
+                Width = 130,
+                Enabled = false
+            };
+            _ctxBtnEdit.Click += CtxBtnEdit_Click;
+            
             _ctxBtnDelete = new ModernButton
             {
                 Text = "Delete Selected",
                 IconChar = "\uE74D",
                 BackColor = _cDanger,
                 CornerBackColor = _cBackground,
-                Location = new Point(130, 0),
+                Location = new Point(270, 0),
                 Width = 150,
                 Enabled = false
             };
             _ctxBtnDelete.Click += CtxBtnDelete_Click;
             
             headerPanel.Controls.Add(_ctxBtnRefresh);
+            headerPanel.Controls.Add(_ctxBtnEdit);
             headerPanel.Controls.Add(_ctxBtnDelete);
             
             // ListView
@@ -145,7 +159,13 @@ namespace OPTools
             _ctxListView.DrawColumnHeader += ListView_DrawColumnHeader; // Reuse existing handler
             _ctxListView.DrawItem += ListView_DrawItem; // Reuse existing handler
             _ctxListView.DrawSubItem += ListView_DrawSubItem; // Reuse existing handler
-            _ctxListView.SelectedIndexChanged += (s, e) => _ctxBtnDelete.Enabled = _ctxListView.SelectedItems.Count > 0;
+            _ctxListView.SelectedIndexChanged += (s, e) => 
+            {
+                bool hasSelection = _ctxListView.SelectedItems.Count > 0;
+                _ctxBtnEdit.Enabled = hasSelection;
+                _ctxBtnDelete.Enabled = hasSelection;
+            };
+            _ctxListView.DoubleClick += (s, e) => CtxBtnEdit_Click(s, e); // Double-click to edit
             
             panel.Controls.Add(_ctxListView);
             panel.Controls.Add(headerPanel);
@@ -407,6 +427,205 @@ namespace OPTools
                 MessageBox.Show(errorMsg, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 _ctxLblStatus.Text = errorMsg;
             }
+        }
+
+        private void CtxBtnEdit_Click(object? sender, EventArgs e)
+        {
+            if (_ctxListView.SelectedItems.Count == 0) return;
+            
+            ListViewItem selectedItem = _ctxListView.SelectedItems[0];
+            if (selectedItem.Tag is not ContextMenuEntry entry) return;
+            
+            // Show edit dialog
+            using (Form editForm = CreateEditEntryForm(entry))
+            {
+                if (editForm.ShowDialog() == DialogResult.OK)
+                {
+                    RefreshContextEntries();
+                }
+            }
+        }
+
+        private Form CreateEditEntryForm(ContextMenuEntry entry)
+        {
+            Form form = new Form
+            {
+                Text = "Edit Context Menu Entry",
+                Size = new Size(700, 280),
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = _cBackground,
+                ForeColor = _cText
+            };
+            
+            int yPos = 25;
+            int labelWidth = 130;
+            int fieldWidth = 500;
+            int spacing = 50;
+            
+            // Menu Name
+            Label lblMenuName = new Label
+            {
+                Text = "Menu Name:",
+                Location = new Point(20, yPos),
+                Size = new Size(labelWidth, 25),
+                ForeColor = _cText,
+                Font = new Font("Segoe UI", 10)
+            };
+            
+            TextBox txtMenuName = new TextBox
+            {
+                Text = entry.DisplayName,
+                Location = new Point(labelWidth + 30, yPos),
+                Size = new Size(fieldWidth, 28),
+                BackColor = Color.FromArgb(45, 45, 48),
+                ForeColor = _cText,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 10)
+            };
+            
+            yPos += spacing;
+            
+            // Application Path
+            Label lblAppPath = new Label
+            {
+                Text = "Application Path:",
+                Location = new Point(20, yPos),
+                Size = new Size(labelWidth, 25),
+                ForeColor = _cText,
+                Font = new Font("Segoe UI", 10)
+            };
+            
+            TextBox txtAppPath = new TextBox
+            {
+                Text = entry.Command,
+                Location = new Point(labelWidth + 30, yPos),
+                Size = new Size(fieldWidth - 90, 28),
+                BackColor = Color.FromArgb(45, 45, 48),
+                ForeColor = _cText,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 10)
+            };
+            
+            ModernButton btnBrowse = new ModernButton
+            {
+                Text = "Browse",
+                IconChar = "\uE8B7",
+                BackColor = _cAccent,
+                CornerBackColor = _cBackground,
+                Location = new Point(labelWidth + 30 + fieldWidth - 80, yPos - 3),
+                Size = new Size(80, 34)
+            };
+            btnBrowse.Click += (s, e) =>
+            {
+                using (OpenFileDialog dialog = new OpenFileDialog())
+                {
+                    dialog.Title = "Select Application";
+                    dialog.Filter = "Executable files (*.exe)|*.exe|All files (*.*)|*.*";
+                    dialog.FilterIndex = 1;
+                    
+                    if (dialog.ShowDialog() == DialogResult.OK)
+                    {
+                        txtAppPath.Text = dialog.FileName;
+                    }
+                }
+            };
+            
+            yPos += spacing + 20;
+            
+            // Menu Type (read-only info)
+            Label lblMenuType = new Label
+            {
+                Text = $"Menu Type: {entry.MenuType}",
+                Location = new Point(labelWidth + 30, yPos),
+                Size = new Size(fieldWidth, 25),
+                ForeColor = _cTextDim,
+                Font = new Font("Segoe UI", 9, FontStyle.Italic)
+            };
+            
+            yPos += spacing;
+            
+            // Buttons
+            ModernButton btnSave = new ModernButton
+            {
+                Text = "Save Changes",
+                IconChar = "\uE74E",
+                BackColor = _cAccent,
+                CornerBackColor = _cBackground,
+                Location = new Point(labelWidth + 30, yPos),
+                Size = new Size(140, 38)
+            };
+            
+            ModernButton btnCancel = new ModernButton
+            {
+                Text = "Cancel",
+                IconChar = "\uE711",
+                BackColor = Color.FromArgb(60, 60, 60),
+                CornerBackColor = _cBackground,
+                Location = new Point(labelWidth + 30 + 150, yPos),
+                Size = new Size(100, 38)
+            };
+            
+            btnSave.Click += (s, ev) =>
+            {
+                string newMenuName = txtMenuName.Text.Trim();
+                string newAppPath = txtAppPath.Text.Trim();
+                
+                if (string.IsNullOrEmpty(newMenuName))
+                {
+                    MessageBox.Show("Menu name cannot be empty", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                
+                if (string.IsNullOrEmpty(newAppPath))
+                {
+                    MessageBox.Show("Application path cannot be empty", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                
+                try
+                {
+                    var (success, message) = _registryManager.UpdateEntry(entry.RegistryPath, newMenuName, newAppPath, entry.MenuType);
+                    
+                    if (success)
+                    {
+                        MessageBox.Show(message, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        _ctxLblStatus.Text = message;
+                        form.DialogResult = DialogResult.OK;
+                        form.Close();
+                    }
+                    else
+                    {
+                        MessageBox.Show(message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to update entry: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            
+            btnCancel.Click += (s, ev) =>
+            {
+                form.DialogResult = DialogResult.Cancel;
+                form.Close();
+            };
+            
+            form.Controls.Add(lblMenuName);
+            form.Controls.Add(txtMenuName);
+            form.Controls.Add(lblAppPath);
+            form.Controls.Add(txtAppPath);
+            form.Controls.Add(btnBrowse);
+            form.Controls.Add(lblMenuType);
+            form.Controls.Add(btnSave);
+            form.Controls.Add(btnCancel);
+            
+            form.AcceptButton = null; // Prevent Enter from closing dialog
+            form.CancelButton = null;
+            
+            return form;
         }
 
         private void CtxBtnDelete_Click(object? sender, EventArgs e)

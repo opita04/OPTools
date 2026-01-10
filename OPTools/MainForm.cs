@@ -40,6 +40,7 @@ namespace OPTools
     private SidebarButton _navContextMenu = null!;
     private SidebarButton _navApplications = null!;
     private SidebarButton _navNpmHandler = null!;
+    private SidebarButton _navBackupScheduler = null!;
     private SidebarButton _navSettings = null!;
 
     // Theme Colors
@@ -82,12 +83,14 @@ namespace OPTools
     // NPM Handler Panel
     private NpmHandlerPanel _npmHandlerPanel = null!;
 
+    // Backup Scheduler Panel
+    private BackupSchedulerPanel _backupSchedulerPanel = null!;
+
     // System Tray
     private NotifyIcon _notifyIcon = null!;
 
-
-
-
+    // ToolTip
+    private ToolTip _toolTip = null!;
 
     // Menu Items for Context Menus (kept for logic reuse)
     // Removed unused menu items
@@ -111,6 +114,13 @@ namespace OPTools
         this.BackColor = _cBackground;
         this.ForeColor = _cText;
         this.ShowInTaskbar = true;
+        
+        // Initialize ToolTip
+        _toolTip = new ToolTip();
+        _toolTip.AutoPopDelay = 5000;
+        _toolTip.InitialDelay = 1000;
+        _toolTip.ReshowDelay = 500;
+        _toolTip.ShowAlways = true;
         
         // Set application icon - load from embedded executable icon (set via ApplicationIcon in .csproj)
         // This ensures the icon always appears in the taskbar
@@ -163,17 +173,18 @@ namespace OPTools
         };
 
         // Sidebar Navigation Buttons
-        _navUnlocker = CreateSidebarButton("File Unlocker", "\uE785", true);
-        _navCleaner = CreateSidebarButton("System Cleaner", "\uE896");
-        _navNetwork = CreateSidebarButton("Network Reset", "\uE968");
-        _navProcesses = CreateSidebarButton("Kill Processes", "\uE90F");
-        _navContextMenu = CreateSidebarButton("Context Menu Manager", "\uE81C");
-        _navApplications = CreateSidebarButton("Applications", "\uE7FC");
-        _navNpmHandler = CreateSidebarButton("Package Handler", "\uE74C");
+        _navUnlocker = CreateSidebarButton("File Unlocker", "\uE785", "Unlock locked files and folders", true);
+        _navCleaner = CreateSidebarButton("System Cleaner", "\uE896", "Clean temporary files and optimize system");
+        _navNetwork = CreateSidebarButton("Network Reset", "\uE968", "Reset network adapters and settings");
+        _navProcesses = CreateSidebarButton("Kill Processes", "\uE90F", "Terminate specific processes like Node.js");
+        _navContextMenu = CreateSidebarButton("Context Menu Manager", "\uE81C", "Manage Windows context menu items");
+        _navApplications = CreateSidebarButton("Applications", "\uE7FC", "Launch pinned applications");
+        _navNpmHandler = CreateSidebarButton("Package Handler", "\uE74C", "Manage NPM packages and projects");
+        _navBackupScheduler = CreateSidebarButton("Backup Scheduler", "\uE81E", "Schedule and manage file backups");
 
 
         // Add to sidebar (reverse order for Dock.Top)
-        _navSettings = CreateSidebarButton("Settings", "\uE713");
+        _navSettings = CreateSidebarButton("Settings", "\uE713", "Application settings and configuration");
         _navSettings.Dock = DockStyle.Bottom;
 
         Panel sidebarDivider = new Panel
@@ -186,6 +197,7 @@ namespace OPTools
         // Add to sidebar (reverse order for Dock.Top)
         _sidebarPanel.Controls.Add(_navSettings);
         _sidebarPanel.Controls.Add(sidebarDivider);
+        _sidebarPanel.Controls.Add(_navBackupScheduler);
         _sidebarPanel.Controls.Add(_navNpmHandler);
         _sidebarPanel.Controls.Add(_navContextMenu);
         _sidebarPanel.Controls.Add(_navProcesses);
@@ -198,7 +210,7 @@ namespace OPTools
         _contentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(30)
+            Padding = new Padding(24)
         };
 
         // Header / Action Bar
@@ -206,13 +218,13 @@ namespace OPTools
         {
             Dock = DockStyle.Top,
             Height = 60,
-            Padding = new Padding(0, 0, 0, 15)
+            Padding = new Padding(0, 0, 0, 16)
         };
 
-        _btnUnlockAll = CreateActionButton("Unlock All", "\uE72E", _cAccent);
-        _btnKillProcess = CreateActionButton("Kill Process", "\uE71A", _cDanger);
-        _btnDelete = CreateActionButton("Delete", "\uE74D", _cDanger);
-        _btnMove = CreateActionButton("Move", "\uE8DE", _cAccent);
+        _btnUnlockAll = CreateActionButton("Unlock All", "\uE72E", _cAccent, "Unlock all listed files");
+        _btnKillProcess = CreateActionButton("Kill Process", "\uE71A", _cDanger, "Terminate the process holding the lock");
+        _btnDelete = CreateActionButton("Delete", "\uE74D", _cDanger, "Force delete the selected file");
+        _btnMove = CreateActionButton("Move", "\uE8DE", _cAccent, "Move the selected file to another location");
         
         _btnRefresh = new ModernButton
         {
@@ -298,6 +310,7 @@ namespace OPTools
         InitializeContextMenuPanel();
         InitializeSettingsPanel();
         InitializeNpmHandlerPanel();
+        InitializeBackupSchedulerPanel();
         InitializeSystemTray();
         LoadSettings();
 
@@ -309,6 +322,7 @@ namespace OPTools
         _navContextMenu.Click += (s, e) => ShowView("contextmenu");
         _navApplications.Click += (s, e) => ShowView("applications");
         _navNpmHandler.Click += (s, e) => ShowView("npmhandler");
+        _navBackupScheduler.Click += (s, e) => ShowView("backupscheduler");
         _navSettings.Click += (s, e) => ShowView("settings");
         
         // Wire up Action Buttons
@@ -333,7 +347,7 @@ namespace OPTools
         _applicationsContentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(30),
+            Padding = new Padding(24),
             BackColor = _cBackground,
             Visible = false
         };
@@ -386,7 +400,7 @@ namespace OPTools
         _cleanerContentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(30),
+            Padding = new Padding(24),
             BackColor = _cBackground,
             Visible = false
         };
@@ -398,7 +412,7 @@ namespace OPTools
             ForeColor = _cText,
             AutoSize = true,
             Dock = DockStyle.Top,
-            Padding = new Padding(0, 0, 0, 20)
+            Padding = new Padding(0, 0, 0, 24)
         };
 
         _cleanerButtonsPanel = new FlowLayoutPanel
@@ -406,7 +420,7 @@ namespace OPTools
             Dock = DockStyle.Fill,
             AutoScroll = true,
             BackColor = _cBackground,
-            Padding = new Padding(0, 20, 0, 0),
+            Padding = new Padding(0, 16, 0, 0),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true
         };
@@ -427,7 +441,7 @@ namespace OPTools
         _networkContentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(30),
+            Padding = new Padding(24),
             BackColor = _cBackground,
             Visible = false
         };
@@ -439,7 +453,7 @@ namespace OPTools
             ForeColor = _cText,
             AutoSize = true,
             Dock = DockStyle.Top,
-            Padding = new Padding(0, 0, 0, 20)
+            Padding = new Padding(0, 0, 0, 24)
         };
 
         _networkButtonsPanel = new FlowLayoutPanel
@@ -447,7 +461,7 @@ namespace OPTools
             Dock = DockStyle.Fill,
             AutoScroll = true,
             BackColor = _cBackground,
-            Padding = new Padding(0, 20, 0, 0),
+            Padding = new Padding(0, 16, 0, 0),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true
         };
@@ -473,7 +487,7 @@ namespace OPTools
         _processesContentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(30),
+            Padding = new Padding(24),
             BackColor = _cBackground,
             Visible = false
         };
@@ -485,7 +499,7 @@ namespace OPTools
             ForeColor = _cText,
             AutoSize = true,
             Dock = DockStyle.Top,
-            Padding = new Padding(0, 0, 0, 20)
+            Padding = new Padding(0, 0, 0, 24)
         };
 
         _processesButtonsPanel = new FlowLayoutPanel
@@ -493,7 +507,7 @@ namespace OPTools
             Dock = DockStyle.Fill,
             AutoScroll = true,
             BackColor = _cBackground,
-            Padding = new Padding(0, 20, 0, 0),
+            Padding = new Padding(0, 16, 0, 0),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true
         };
@@ -513,7 +527,7 @@ namespace OPTools
         _settingsContentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(30),
+            Padding = new Padding(24),
             BackColor = _cBackground,
             Visible = false
         };
@@ -525,14 +539,14 @@ namespace OPTools
             ForeColor = _cText,
             AutoSize = true,
             Dock = DockStyle.Top,
-            Padding = new Padding(0, 0, 0, 20)
+            Padding = new Padding(0, 0, 0, 24)
         };
 
         Panel settingsOptionsPanel = new Panel
         {
             Dock = DockStyle.Top,
             Height = 150,
-            Padding = new Padding(0, 0, 0, 20),
+            Padding = new Padding(0, 0, 0, 24),
             BackColor = _cBackground
         };
 
@@ -568,7 +582,7 @@ namespace OPTools
             Dock = DockStyle.Fill,
             AutoScroll = true,
             BackColor = _cBackground,
-            Padding = new Padding(0, 20, 0, 0),
+            Padding = new Padding(0, 16, 0, 0),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true
         };
@@ -591,6 +605,15 @@ namespace OPTools
             Visible = false
         };
         _contentPanel.Controls.Add(_npmHandlerPanel);
+    }
+
+    private void InitializeBackupSchedulerPanel()
+    {
+        _backupSchedulerPanel = new BackupSchedulerPanel
+        {
+            Visible = false
+        };
+        _contentPanel.Controls.Add(_backupSchedulerPanel);
     }
 
     private void InitializeSystemTray()
@@ -719,7 +742,7 @@ namespace OPTools
         _notifyIcon.Visible = enabled;
     }
 
-    private void AddProcessButton(string text, string icon, EventHandler action)
+    private void AddProcessButton(string text, string icon, EventHandler action, string tooltipText = "")
     {
         var btn = new ModernButton
         {
@@ -727,14 +750,18 @@ namespace OPTools
             IconChar = icon,
             BackColor = _cAccent,
             Width = 200,
-            Height = 50,
-            Margin = new Padding(0, 0, 15, 15)
+            Height = 40,
+            Margin = new Padding(0, 0, 16, 16)
         };
         btn.Click += action;
+        if (!string.IsNullOrEmpty(tooltipText))
+        {
+            _toolTip.SetToolTip(btn, tooltipText);
+        }
         _processesButtonsPanel.Controls.Add(btn);
     }
 
-    private void AddSettingsButton(string text, string icon, EventHandler action)
+    private void AddSettingsButton(string text, string icon, EventHandler action, string tooltipText = "")
     {
         var btn = new ModernButton
         {
@@ -742,14 +769,18 @@ namespace OPTools
             IconChar = icon,
             BackColor = _cAccent,
             Width = 200,
-            Height = 50,
-            Margin = new Padding(0, 0, 15, 15)
+            Height = 40,
+            Margin = new Padding(0, 0, 16, 16)
         };
         btn.Click += action;
+        if (!string.IsNullOrEmpty(tooltipText))
+        {
+            _toolTip.SetToolTip(btn, tooltipText);
+        }
         _settingsButtonsPanel.Controls.Add(btn);
     }
 
-    private void AddCleanerButton(string text, string icon, EventHandler action)
+    private void AddCleanerButton(string text, string icon, EventHandler action, string tooltipText = "")
     {
         var btn = new ModernButton
         {
@@ -757,10 +788,14 @@ namespace OPTools
             IconChar = icon,
             BackColor = _cAccent,
             Width = 200,
-            Height = 50,
-            Margin = new Padding(0, 0, 15, 15)
+            Height = 40,
+            Margin = new Padding(0, 0, 16, 16)
         };
         btn.Click += action;
+        if (!string.IsNullOrEmpty(tooltipText))
+        {
+            _toolTip.SetToolTip(btn, tooltipText);
+        }
         _cleanerButtonsPanel.Controls.Add(btn);
     }
 
@@ -772,8 +807,8 @@ namespace OPTools
             IconChar = icon,
             BackColor = isDanger ? _cDanger : _cAccent,
             Width = 200,
-            Height = 50,
-            Margin = new Padding(0, 0, 15, 15)
+            Height = 40,
+            Margin = new Padding(0, 0, 16, 16)
         };
 
         btn.Click += async (s, e) =>
@@ -816,6 +851,7 @@ namespace OPTools
         _navContextMenu.IsActive = viewName == "contextmenu";
         _navApplications.IsActive = viewName == "applications";
         _navNpmHandler.IsActive = viewName == "npmhandler";
+        _navBackupScheduler.IsActive = viewName == "backupscheduler";
         _navSettings.IsActive = viewName == "settings";
 
         // Show/hide panels
@@ -829,11 +865,17 @@ namespace OPTools
         _processesContentPanel.Visible = viewName == "processes";
         _contextMenuContentPanel.Visible = viewName == "contextmenu";
         _npmHandlerPanel.Visible = viewName == "npmhandler";
+        _backupSchedulerPanel.Visible = viewName == "backupscheduler";
         _settingsContentPanel.Visible = viewName == "settings";
 
         if (viewName == "npmhandler")
         {
             _npmHandlerPanel.Initialize();
+        }
+
+        if (viewName == "backupscheduler")
+        {
+            _backupSchedulerPanel.Initialize();
         }
 
         if (viewName == "contextmenu")
@@ -910,7 +952,7 @@ namespace OPTools
                 Tag = path,
                 Cursor = Cursors.Hand,
                 Padding = new Padding(5),
-                Margin = new Padding(10)
+                Margin = new Padding(8)
             };
             
             btn.FlatAppearance.BorderSize = 1;
@@ -941,6 +983,8 @@ namespace OPTools
             btn.ContextMenuStrip = _contextMenuApplications;
             btn.MouseEnter += (s, e) => { btn.BackColor = _cHover; };
             btn.MouseLeave += (s, e) => { btn.BackColor = Color.FromArgb(45, 45, 48); };
+            
+            _toolTip.SetToolTip(btn, path);
 
             _applicationsPanel.Controls.Add(btn);
         }
@@ -1091,10 +1135,10 @@ namespace OPTools
             BackColor = Color.Transparent
         };
 
-        _btnUnlockAll.Margin = new Padding(0, 0, 10, 0);
-        _btnKillProcess.Margin = new Padding(0, 0, 10, 0);
-        _btnDelete.Margin = new Padding(0, 0, 10, 0);
-        _btnMove.Margin = new Padding(0, 0, 10, 0);
+        _btnUnlockAll.Margin = new Padding(0, 0, 16, 0);
+        _btnKillProcess.Margin = new Padding(0, 0, 16, 0);
+        _btnDelete.Margin = new Padding(0, 0, 16, 0);
+        _btnMove.Margin = new Padding(0, 0, 16, 0);
 
         flow.Controls.Add(_btnUnlockAll);
         flow.Controls.Add(_btnKillProcess);
@@ -1105,28 +1149,42 @@ namespace OPTools
         _headerPanel.Controls.Add(_btnRefresh); // Refresh docked Right
     }
 
-    private SidebarButton CreateSidebarButton(string text, string icon, bool isActive = false)
+    private SidebarButton CreateSidebarButton(string text, string icon, string tooltipText = "", bool isActive = false)
     {
-        return new SidebarButton
+        var btn = new SidebarButton
         {
             Text = text,
             IconChar = icon,
             IsActive = isActive,
             Dock = DockStyle.Top,
-            Height = 55
+            Height = 48
         };
+        
+        if (!string.IsNullOrEmpty(tooltipText))
+        {
+            _toolTip.SetToolTip(btn, tooltipText);
+        }
+        
+        return btn;
     }
 
-    private ModernButton CreateActionButton(string text, string icon, Color color)
+    private ModernButton CreateActionButton(string text, string icon, Color color, string tooltipText = "")
     {
-        return new ModernButton
+        var btn = new ModernButton
         {
             Text = text,
             IconChar = icon,
             BackColor = color,
             Width = 140,
-            Margin = new Padding(0, 0, 15, 0)
+            Margin = new Padding(0, 0, 16, 0)
         };
+
+        if (!string.IsNullOrEmpty(tooltipText))
+        {
+            _toolTip.SetToolTip(btn, tooltipText);
+        }
+
+        return btn;
     }
 
     // Custom Drawing for ListView
@@ -1191,7 +1249,7 @@ namespace OPTools
     {
         if (string.IsNullOrWhiteSpace(_targetPath))
         {
-            _lblStatus.Text = "No target path specified";
+            _lblStatus.Text = "Drag and Drop Application";
             return;
         }
 
@@ -1985,6 +2043,9 @@ namespace OPTools
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        // Shutdown backup scheduler
+        _backupSchedulerPanel?.Shutdown();
+
         if (_notifyIcon != null)
         {
             _notifyIcon.Visible = false;

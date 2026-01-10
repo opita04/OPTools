@@ -171,7 +171,7 @@ public class SidebarButton : Button
 
         // Draw Icon and Text
         int iconX = 25;
-        int textX = 55;
+        int textX = 50;
         int centerY = this.Height / 2;
 
         // Icon

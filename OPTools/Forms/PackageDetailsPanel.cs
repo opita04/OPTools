@@ -23,6 +23,7 @@ namespace OPTools.Forms
 
         private NpmPackage? _currentPackage;
         private Panel _contentPanel = null!;
+        private ToolTip _toolTip = null!;
         
         public event EventHandler? CloseRequested;
         public event EventHandler<NpmPackage>? UpdateRequested;
@@ -35,6 +36,12 @@ namespace OPTools.Forms
 
         private void InitializePanel()
         {
+            _toolTip = new ToolTip();
+            _toolTip.AutoPopDelay = 5000;
+            _toolTip.InitialDelay = 1000;
+            _toolTip.ReshowDelay = 500;
+            _toolTip.ShowAlways = true;
+
             this.Width = 400;
             this.Dock = DockStyle.Right;
             this.BackColor = _cBackground;
@@ -170,7 +177,7 @@ namespace OPTools.Forms
             // Update Button (if outdated)
             if (pkg.IsOutdated)
             {
-                var btnUpdate = CreateActionButton("Update Package", _cSuccess);
+                var btnUpdate = CreateActionButton("Update Package", _cSuccess, "Update this package to the latest version");
                 btnUpdate.Location = new Point(10, yPos);
                 btnUpdate.Click += (s, e) => UpdateRequested?.Invoke(this, pkg);
                 _contentPanel.Controls.Add(btnUpdate);
@@ -178,7 +185,7 @@ namespace OPTools.Forms
             }
 
             // Uninstall Button
-            var btnUninstall = CreateActionButton("Uninstall Package", Color.FromArgb(217, 83, 79));
+            var btnUninstall = CreateActionButton("Uninstall Package", Color.FromArgb(217, 83, 79), "Uninstall this package from the project");
             btnUninstall.Location = new Point(10, yPos);
             btnUninstall.Click += (s, e) => UninstallRequested?.Invoke(this, pkg);
             _contentPanel.Controls.Add(btnUninstall);
@@ -299,6 +306,10 @@ namespace OPTools.Forms
             btn.Click += (s, e) => OpenUrl(url);
             lbl.Click += (s, e) => OpenUrl(url);
             arrow.Click += (s, e) => OpenUrl(url);
+            
+            _toolTip.SetToolTip(btn, url);
+            _toolTip.SetToolTip(lbl, url);
+            _toolTip.SetToolTip(arrow, url);
 
             _contentPanel.Controls.Add(btn);
             yPos += 55;
@@ -318,9 +329,9 @@ namespace OPTools.Forms
             yPos += 15;
         }
 
-        private Button CreateActionButton(string text, Color bgColor)
+        private Button CreateActionButton(string text, Color bgColor, string tooltipText = "")
         {
-            return new Button
+            var btn = new Button
             {
                 Text = text,
                 Width = _contentPanel.Width - 40,
@@ -331,6 +342,13 @@ namespace OPTools.Forms
                 Font = new Font("Segoe UI", 10, FontStyle.Bold),
                 Cursor = Cursors.Hand
             };
+            
+            if (!string.IsNullOrEmpty(tooltipText))
+            {
+                _toolTip.SetToolTip(btn, tooltipText);
+            }
+            
+            return btn;
         }
 
         private void OpenUrl(string url)

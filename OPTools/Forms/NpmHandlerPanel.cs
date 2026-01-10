@@ -83,6 +83,8 @@ namespace OPTools.Forms
         private int _sortColumn = -1;
         private bool _sortAscending = true;
 
+        private ToolTip _toolTip = null!;
+
         public NpmHandlerPanel()
         {
             InitializeComponents();
@@ -106,6 +108,12 @@ namespace OPTools.Forms
 
         private void InitializeComponents()
         {
+            _toolTip = new ToolTip();
+            _toolTip.AutoPopDelay = 5000;
+            _toolTip.InitialDelay = 1000;
+            _toolTip.ReshowDelay = 500;
+            _toolTip.ShowAlways = true;
+
             this.BackColor = _cBackground;
             this.Dock = DockStyle.Fill;
             this.Padding = new Padding(30);
@@ -137,7 +145,7 @@ namespace OPTools.Forms
             };
             
             // Back Button (Initially Hidden) - Added to action panel for proper flow
-            _btnBack = CreateActionButton("\u2190 All Projects", "\uE72B", _cGridHeader); // Back Arrow Icon
+            _btnBack = CreateActionButton("\u2190 All Projects", "\uE72B", _cGridHeader, "Return to projects view"); // Back Arrow Icon
             _btnBack.Width = 120;
             _btnBack.Visible = false;
             _btnBack.Click += (s, e) => SwitchToProjects();
@@ -152,15 +160,15 @@ namespace OPTools.Forms
                 BackColor = _cBackground
             };
 
-            _btnScanDirectory = CreateActionButton("Scan Directory", "\uE8B7", _cAccent);
-            _btnAddFolder = CreateActionButton("Add Folder", "\uE710", _cAccent); // Add icon
-            _btnScanGlobal = CreateActionButton("Scan Global", "\uE774", _cAccent);
-            _btnCheckUpdates = CreateActionButton("Check Updates", "\uE777", _cAccent);
-            _btnUpdateAll = CreateActionButton("Update All", "\uE74A", _cSuccess);
-            _btnExport = CreateActionButton("Export", "\uE78C", Color.FromArgb(60, 60, 60));
-            _btnRefresh = CreateActionButton("Refresh", "\uE72C", Color.FromArgb(60, 60, 60));
-            _btnLogs = CreateActionButton("Logs", "\uE7BA", Color.FromArgb(60, 60, 60));
-            _btnClearAll = CreateActionButton("Clear All", "\uE74D", _cDanger);
+            _btnScanDirectory = CreateActionButton("Scan Directory", "\uE8B7", _cAccent, "Scan current directory for package.json");
+            _btnAddFolder = CreateActionButton("Add Folder", "\uE710", _cAccent, "Manually add a project folder"); // Add icon
+            _btnScanGlobal = CreateActionButton("Scan Global", "\uE774", _cAccent, "Scan for global npm packages");
+            _btnCheckUpdates = CreateActionButton("Check Updates", "\uE777", _cAccent, "Check for package updates");
+            _btnUpdateAll = CreateActionButton("Update All", "\uE74A", _cSuccess, "Update all outdated packages");
+            _btnExport = CreateActionButton("Export", "\uE78C", Color.FromArgb(60, 60, 60), "Export package list");
+            _btnRefresh = CreateActionButton("Refresh", "\uE72C", Color.FromArgb(60, 60, 60), "Refresh package list");
+            _btnLogs = CreateActionButton("Logs", "\uE7BA", Color.FromArgb(60, 60, 60), "View error logs");
+            _btnClearAll = CreateActionButton("Clear All", "\uE74D", _cDanger, "Clear all projects and packages");
 
             _btnScanDirectory.Click += BtnScanDirectory_Click;
             _btnAddFolder.Click += BtnAddFolder_Click;
@@ -516,9 +524,9 @@ namespace OPTools.Forms
             _contextMenu.Items.Add(openFolderItem);
         }
 
-        private ModernButton CreateActionButton(string text, string icon, Color bgColor)
+        private ModernButton CreateActionButton(string text, string icon, Color bgColor, string tooltipText = "")
         {
-            return new ModernButton
+            var btn = new ModernButton
             {
                 Text = text,
                 IconChar = icon,
@@ -527,6 +535,11 @@ namespace OPTools.Forms
                 Height = 40,
                 Margin = new Padding(0, 0, 10, 0)
             };
+            if (!string.IsNullOrEmpty(tooltipText))
+            {
+                _toolTip.SetToolTip(btn, tooltipText);
+            }
+            return btn;
         }
 
         #region Data Loading and View Switching

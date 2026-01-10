@@ -130,14 +130,18 @@ public class ContextMenuRegistryManager
             return (false, "Application path cannot be empty");
         }
         
-        if (!File.Exists(appPath))
+        // Extract executable path for validation (handles full commands with arguments)
+        string executablePath = ExtractExecutablePath(appPath);
+        bool isCustomCommand = appPath.Trim() != executablePath; // Has arguments
+        
+        if (!File.Exists(executablePath))
         {
-            return (false, $"Application path does not exist: {appPath}");
+            return (false, $"Application path does not exist: {executablePath}");
         }
         
-        if (Directory.Exists(appPath))
+        if (Directory.Exists(executablePath))
         {
-            return (false, $"Path is a directory, not a file: {appPath}");
+            return (false, $"Path is a directory, not a file: {executablePath}");
         }
         
         // Validate menu name
@@ -183,10 +187,15 @@ public class ContextMenuRegistryManager
                             if (commandKey != null)
                             {
                                 // Set command path
-                                // Folder background doesn't receive file parameter
-                                // Folder and File context menus receive "%1" parameter
+                                // If user provided a custom command with arguments, use it as-is
+                                // Otherwise, build the command based on menu type
                                 string commandValue;
-                                if (menuType == "Folder Background")
+                                if (isCustomCommand)
+                                {
+                                    // User provided full command with arguments - use as-is
+                                    commandValue = appPath;
+                                }
+                                else if (menuType == "Folder Background")
                                 {
                                     // No parameter for background context menu
                                     commandValue = appPath.Contains(" ") ? $"\"{appPath}\"" : appPath;
@@ -228,6 +237,87 @@ public class ContextMenuRegistryManager
         else
         {
             return (false, $"Failed to add entry: {string.Join("; ", errors)}");
+        }
+    }
+
+    public (bool Success, string Message) UpdateEntry(string registryPath, string newDisplayName, string newAppPath, string menuType)
+    {
+        try
+        {
+            // Validate new app path
+            if (string.IsNullOrWhiteSpace(newAppPath))
+            {
+                return (false, "Application path cannot be empty");
+            }
+            
+            // Extract executable path for validation (handles full commands with arguments)
+            string executablePath = ExtractExecutablePath(newAppPath);
+            bool isCustomCommand = newAppPath.Trim() != executablePath; // Has arguments
+            
+            if (!File.Exists(executablePath))
+            {
+                return (false, $"Application path does not exist: {executablePath}");
+            }
+            
+            // Validate display name
+            if (string.IsNullOrWhiteSpace(newDisplayName))
+            {
+                return (false, "Menu name cannot be empty");
+            }
+            
+            // Open the existing entry key
+            using (var entryKey = _rootKey.OpenSubKey(registryPath, true))
+            {
+                if (entryKey == null)
+                {
+                    return (false, "Entry not found in registry");
+                }
+                
+                // Update display name
+                entryKey.SetValue("", newDisplayName);
+                
+                // Update command
+                using (var commandKey = entryKey.OpenSubKey("command", true))
+                {
+                    if (commandKey != null)
+                    {
+                        // Build command value based on menu type
+                        // If user provided a custom command with arguments, use it as-is
+                        string commandValue;
+                        if (isCustomCommand)
+                        {
+                            // User provided full command with arguments - use as-is
+                            commandValue = newAppPath;
+                        }
+                        else if (menuType == "Folder Background")
+                        {
+                            commandValue = newAppPath.Contains(" ") ? $"\"{newAppPath}\"" : newAppPath;
+                        }
+                        else
+                        {
+                            commandValue = newAppPath.Contains(" ") 
+                                ? $"\"{newAppPath}\" \"%1\"" 
+                                : $"{newAppPath} \"%1\"";
+                        }
+                        
+                        commandKey.SetValue("", commandValue);
+                    }
+                    else
+                    {
+                        return (false, "Command key not found");
+                    }
+                }
+            }
+            
+            return (true, "Entry updated successfully");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return (false, "Permission denied (run as administrator)");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Error updating entry: {ex.Message}");
         }
     }
 
@@ -289,6 +379,43 @@ public class ContextMenuRegistryManager
         }
     }
 
+    /// <summary>
+    /// Extracts the executable path from a full command string.
+    /// Handles both quoted paths and unquoted paths with arguments.
+    /// Examples:
+    /// - "C:\Windows\System32\cmd.exe /k pushd \"%1\"" -> "C:\Windows\System32\cmd.exe"
+    /// - "\"C:\Program Files\app.exe\" \"%1\"" -> "C:\Program Files\app.exe"
+    /// </summary>
+    private string ExtractExecutablePath(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return string.Empty;
+        
+        string trimmed = command.Trim();
+        
+        // If the command starts with a quote, find the closing quote
+        if (trimmed.StartsWith('"'))
+        {
+            int closingQuote = trimmed.IndexOf('"', 1);
+            if (closingQuote > 1)
+            {
+                return trimmed.Substring(1, closingQuote - 1);
+            }
+            // No closing quote found, return everything after the opening quote
+            return trimmed.Substring(1);
+        }
+        
+        // No leading quote - split on first space (if any)
+        int spaceIndex = trimmed.IndexOf(' ');
+        if (spaceIndex > 0)
+        {
+            return trimmed.Substring(0, spaceIndex);
+        }
+        
+        // No spaces, return the whole string
+        return trimmed;
+    }
+    
     private string SanitizeKeyName(string name)
     {
         // Remove invalid characters
