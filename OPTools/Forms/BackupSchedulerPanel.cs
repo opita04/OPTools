@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using OPTools.Core;
@@ -76,14 +77,16 @@ public class BackupSchedulerPanel : Panel
         _btnAddJob = new ModernButton
         {
             Text = "Add Backup Job",
-            IconChar = "\uE710",
+            Image = IconHelper.GetActionIcon("Add"),
             BackColor = _cAccent,
             Width = 160,
+
             Height = 40,
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            Location = new Point(this.Width - 184, 8)
+            Location = new Point(this.Width - 220, 8)
         };
         _btnAddJob.Click += BtnAddJob_Click;
+        _toolTip.SetToolTip(_btnAddJob, "Create a new scheduled backup job");
 
         _headerPanel.Controls.Add(lblTitle);
         _headerPanel.Controls.Add(_btnAddJob);
@@ -116,7 +119,7 @@ public class BackupSchedulerPanel : Panel
 
         this.Resize += (s, e) =>
         {
-            _btnAddJob.Location = new Point(this.Width - 184, 8);
+            _btnAddJob.Location = new Point(this.Width - 220, 8);
             RefreshJobCards();
         };
     }
@@ -269,27 +272,28 @@ public class BackupSchedulerPanel : Panel
             Location = new Point(cardWidth - 200, 12)
         };
 
-        // Action buttons
-        var btnRun = CreateSmallButton("▶", _cSuccess);
-        btnRun.Location = new Point(cardWidth - 120, 80);
+        // Action buttons (36px each with 6px gap = 126px total from right edge)
+        var btnRun = CreateSmallButton("", _cSuccess, "Run backup now", IconHelper.GetActionIcon("Run"));
+        btnRun.Location = new Point(cardWidth - 132, 78);
         btnRun.Click += async (s, e) =>
         {
             btnRun.Enabled = false;
-            btnRun.Text = "...";
+            // btnRun.Text = "..."; // Don't change text/icon for loading state in this simple button for now, or use a loading icon
             await _scheduler.RunJobNowAsync(job.Id);
             btnRun.Enabled = true;
-            btnRun.Text = "▶";
+            // btnRun.Text = "▶";
             SaveJobs();
             RefreshJobCards();
         };
 
-        var btnEdit = CreateSmallButton("✎", _cAccent);
-        btnEdit.Location = new Point(cardWidth - 85, 80);
+        var btnEdit = CreateSmallButton("", _cAccent, "Edit backup job", IconHelper.GetActionIcon("Edit"));
+        btnEdit.Location = new Point(cardWidth - 90, 78);
         btnEdit.Click += (s, e) => EditJob(job);
 
-        var btnDelete = CreateSmallButton("✕", _cDanger);
-        btnDelete.Location = new Point(cardWidth - 50, 80);
+        var btnDelete = CreateSmallButton("", _cDanger, "Delete backup job", IconHelper.GetActionIcon("Delete"));
+        btnDelete.Location = new Point(cardWidth - 48, 78);
         btnDelete.Click += (s, e) =>
+
         {
             if (MessageBox.Show($"Delete backup job '{job.Name}'?", "Confirm Delete",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
@@ -313,48 +317,78 @@ public class BackupSchedulerPanel : Panel
         return card;
     }
 
-    private Button CreateSmallButton(string text, Color backColor)
+    private ModernButton CreateSmallButton(string text, Color accentColor, string tooltipText, Image? icon = null)
     {
-        return new Button
+        // Use transparent/subtle background to let icon colors shine
+        var bgColor = Color.FromArgb(60, 60, 63);
+        var hoverColor = Color.FromArgb(80, accentColor.R, accentColor.G, accentColor.B);
+        
+        var btn = new ModernButton
         {
             Text = text,
-            Width = 30,
-            Height = 30,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = backColor,
-            ForeColor = Color.White,
-            Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 10)
+            Image = icon,
+            Width = 36,
+            Height = 36,
+            BackColor = bgColor,
+            HoverColor = hoverColor,
+            BorderRadius = 10,
+            ImagePadding = 6
         };
+        
+        if (!string.IsNullOrEmpty(tooltipText))
+        {
+            _toolTip.SetToolTip(btn, tooltipText);
+        }
+        
+        return btn;
     }
 
-    private void BtnAddJob_Click(object? sender, EventArgs e)
+
+    private async void BtnAddJob_Click(object? sender, EventArgs e)
     {
         var newJob = new BackupJob { Name = "New Backup Job" };
-        if (ShowJobEditor(newJob, true))
+        using var dialog = new BackupJobEditorDialog(newJob, true);
+        dialog.StartPosition = FormStartPosition.CenterParent;
+        
+        if (dialog.ShowDialog() == DialogResult.OK)
         {
             _scheduler.AddJob(newJob);
             SaveJobs();
             RefreshJobCards();
+            
+            // Run immediately if requested
+            if (dialog.ShouldRunImmediately)
+            {
+                _lblStatus.Text = $"Running: {newJob.Name}...";
+                await _scheduler.RunJobNowAsync(newJob.Id);
+                SaveJobs();
+                RefreshJobCards();
+            }
         }
     }
 
-    private void EditJob(BackupJob job)
+    private async void EditJob(BackupJob job)
     {
-        if (ShowJobEditor(job, false))
+        using var dialog = new BackupJobEditorDialog(job, false);
+        dialog.StartPosition = FormStartPosition.CenterParent;
+        
+        if (dialog.ShowDialog() == DialogResult.OK)
         {
             _scheduler.UpdateJob(job);
             SaveJobs();
             RefreshJobCards();
+            
+            // Run immediately if requested
+            if (dialog.ShouldRunImmediately)
+            {
+                _lblStatus.Text = $"Running: {job.Name}...";
+                await _scheduler.RunJobNowAsync(job.Id);
+                SaveJobs();
+                RefreshJobCards();
+            }
         }
     }
 
-    private bool ShowJobEditor(BackupJob job, bool isNew)
-    {
-        using var dialog = new BackupJobEditorDialog(job, isNew);
-        dialog.StartPosition = FormStartPosition.CenterParent;
-        return dialog.ShowDialog() == DialogResult.OK;
-    }
 
     private void Scheduler_JobStarted(object? sender, BackupJobEventArgs e)
     {
@@ -424,6 +458,11 @@ public class BackupJobEditorDialog : Form
 {
     private readonly BackupJob _job;
     private readonly bool _isNew;
+    
+    /// <summary>
+    /// Indicates whether the user chose to run the backup immediately after saving
+    /// </summary>
+    public bool ShouldRunImmediately { get; private set; }
 
     // Theme Colors
     private readonly Color _cBackground = Color.FromArgb(30, 30, 30);
@@ -653,6 +692,25 @@ public class BackupJobEditorDialog : Form
         y += 50;
 
         // Buttons
+        var btnSaveRun = new ModernButton
+        {
+            Text = "Save & Run",
+            BackColor = Color.FromArgb(92, 184, 92), // Success green
+            Width = 110,
+            Height = 40,
+            Location = new Point(this.Width - 360, y)
+        };
+        btnSaveRun.Click += (s, e) =>
+        {
+            if (ValidateInput())
+            {
+                SaveJobData();
+                ShouldRunImmediately = true;
+                this.DialogResult = DialogResult.OK;
+                this.Close();
+            }
+        };
+
         var btnSave = new ModernButton
         {
             Text = "Save",
@@ -666,6 +724,7 @@ public class BackupJobEditorDialog : Form
             if (ValidateInput())
             {
                 SaveJobData();
+                ShouldRunImmediately = false;
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }
@@ -685,6 +744,7 @@ public class BackupJobEditorDialog : Form
             this.Close();
         };
 
+        this.Controls.Add(btnSaveRun);
         this.Controls.Add(btnSave);
         this.Controls.Add(btnCancel);
     }

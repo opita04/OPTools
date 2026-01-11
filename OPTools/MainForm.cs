@@ -39,7 +39,7 @@ namespace OPTools
     private SidebarButton _navProcesses = null!;
     private SidebarButton _navContextMenu = null!;
     private SidebarButton _navApplications = null!;
-    private SidebarButton _navNpmHandler = null!;
+    private SidebarButton _navPackageHandler = null!;
     private SidebarButton _navBackupScheduler = null!;
     private SidebarButton _navSettings = null!;
 
@@ -80,8 +80,8 @@ namespace OPTools
     private CheckBox _chkStartOnStartup = null!;
     private CheckBox _chkMinimizeToTray = null!;
 
-    // NPM Handler Panel
-    private NpmHandlerPanel _npmHandlerPanel = null!;
+    // Package Handler Panel
+    private PackageHandlerPanel _packageHandlerPanel = null!;
 
     // Backup Scheduler Panel
     private BackupSchedulerPanel _backupSchedulerPanel = null!;
@@ -173,18 +173,18 @@ namespace OPTools
         };
 
         // Sidebar Navigation Buttons
-        _navUnlocker = CreateSidebarButton("File Unlocker", "\uE785", "Unlock locked files and folders", true);
-        _navCleaner = CreateSidebarButton("System Cleaner", "\uE896", "Clean temporary files and optimize system");
-        _navNetwork = CreateSidebarButton("Network Reset", "\uE968", "Reset network adapters and settings");
-        _navProcesses = CreateSidebarButton("Kill Processes", "\uE90F", "Terminate specific processes like Node.js");
-        _navContextMenu = CreateSidebarButton("Context Menu Manager", "\uE81C", "Manage Windows context menu items");
-        _navApplications = CreateSidebarButton("Applications", "\uE7FC", "Launch pinned applications");
-        _navNpmHandler = CreateSidebarButton("Package Handler", "\uE74C", "Manage NPM packages and projects");
-        _navBackupScheduler = CreateSidebarButton("Backup Scheduler", "\uE81E", "Schedule and manage file backups");
-
+        _navUnlocker = CreateSidebarButton("File Unlocker", IconHelper.GetSidebarIcon("Unlocker"), "Unlock locked files and folders", true);
+        _navCleaner = CreateSidebarButton("System Cleaner", IconHelper.GetSidebarIcon("Cleaner"), "Clean temporary files and optimize system");
+        _navNetwork = CreateSidebarButton("Network Reset", IconHelper.GetSidebarIcon("Network"), "Reset network adapters and settings");
+        _navProcesses = CreateSidebarButton("Kill Processes", IconHelper.GetSidebarIcon("Processes"), "Terminate specific processes like Node.js");
+        _navContextMenu = CreateSidebarButton("Context Menu Manager", IconHelper.GetSidebarIcon("ContextMenu"), "Manage Windows context menu items");
+        _navApplications = CreateSidebarButton("Applications", IconHelper.GetSidebarIcon("Applications"), "Launch pinned applications");
+        _navPackageHandler = CreateSidebarButton("Package Handler", IconHelper.GetSidebarIcon("Package"), "Manage packages and projects");
+        _navBackupScheduler = CreateSidebarButton("Backup Scheduler", IconHelper.GetSidebarIcon("Backup"), "Schedule and manage file backups");
 
         // Add to sidebar (reverse order for Dock.Top)
-        _navSettings = CreateSidebarButton("Settings", "\uE713", "Application settings and configuration");
+        _navSettings = CreateSidebarButton("Settings", IconHelper.GetSidebarIcon("Settings"), "Application settings and configuration");
+
         _navSettings.Dock = DockStyle.Bottom;
 
         Panel sidebarDivider = new Panel
@@ -198,7 +198,7 @@ namespace OPTools
         _sidebarPanel.Controls.Add(_navSettings);
         _sidebarPanel.Controls.Add(sidebarDivider);
         _sidebarPanel.Controls.Add(_navBackupScheduler);
-        _sidebarPanel.Controls.Add(_navNpmHandler);
+        _sidebarPanel.Controls.Add(_navPackageHandler);
         _sidebarPanel.Controls.Add(_navContextMenu);
         _sidebarPanel.Controls.Add(_navProcesses);
         _sidebarPanel.Controls.Add(_navNetwork);
@@ -221,19 +221,20 @@ namespace OPTools
             Padding = new Padding(0, 0, 0, 16)
         };
 
-        _btnUnlockAll = CreateActionButton("Unlock All", "\uE72E", _cAccent, "Unlock all listed files");
-        _btnKillProcess = CreateActionButton("Kill Process", "\uE71A", _cDanger, "Terminate the process holding the lock");
-        _btnDelete = CreateActionButton("Delete", "\uE74D", _cDanger, "Force delete the selected file");
-        _btnMove = CreateActionButton("Move", "\uE8DE", _cAccent, "Move the selected file to another location");
+        _btnUnlockAll = CreateActionButton("Unlock All", IconHelper.GetActionIcon("Unlock"), _cAccent, "Unlock all listed files");
+        _btnKillProcess = CreateActionButton("Kill Process", IconHelper.GetActionIcon("Kill"), _cDanger, "Terminate the process holding the lock");
+        _btnDelete = CreateActionButton("Delete", IconHelper.GetActionIcon("Delete"), _cDanger, "Force delete the selected file");
+        _btnMove = CreateActionButton("Move", IconHelper.GetActionIcon("Move"), _cAccent, "Move the selected file to another location");
         
         _btnRefresh = new ModernButton
         {
             Text = "",
-            IconChar = "\uE72C",
+            Image = IconHelper.GetActionIcon("Refresh"),
             BackColor = Color.FromArgb(60, 60, 60),
             Width = 50,
             Dock = DockStyle.Right
         };
+
 
         // Initialize Header Layout
         InitializeHeaderButtons();
@@ -309,7 +310,7 @@ namespace OPTools
         InitializeProcessesPanel();
         InitializeContextMenuPanel();
         InitializeSettingsPanel();
-        InitializeNpmHandlerPanel();
+        InitializePackageHandlerPanel();
         InitializeBackupSchedulerPanel();
         InitializeSystemTray();
         LoadSettings();
@@ -321,7 +322,7 @@ namespace OPTools
         _navProcesses.Click += (s, e) => ShowView("processes");
         _navContextMenu.Click += (s, e) => ShowView("contextmenu");
         _navApplications.Click += (s, e) => ShowView("applications");
-        _navNpmHandler.Click += (s, e) => ShowView("npmhandler");
+        _navPackageHandler.Click += (s, e) => ShowView("packagehandler");
         _navBackupScheduler.Click += (s, e) => ShowView("backupscheduler");
         _navSettings.Click += (s, e) => ShowView("settings");
         
@@ -426,10 +427,11 @@ namespace OPTools
         };
 
         // Add buttons
-        AddCleanerButton("Clean Folder Contents", "\uE896", (s, e) => MenuCleanFolder_Click(s, e));
-        AddCleanerButton("Remove Prefetch", "\uE74D", (s, e) => MenuCleanPrefetch_Click(s, e));
-        AddCleanerButton("Empty Recycle Bin", "\uE74D", (s, e) => MenuEmptyRecycleBin_Click(s, e));
-        AddCleanerButton("Clean All (System)", "\uE74D", (s, e) => MenuCleanSystem_Click(s, e));
+        AddCleanerButton("Clean Folder Contents", IconHelper.GetActionIcon("Delete"), (s, e) => MenuCleanFolder_Click(s, e));
+        AddCleanerButton("Remove Prefetch", IconHelper.GetActionIcon("Delete"), (s, e) => MenuCleanPrefetch_Click(s, e));
+        AddCleanerButton("Empty Recycle Bin", IconHelper.GetActionIcon("Delete"), (s, e) => MenuEmptyRecycleBin_Click(s, e));
+        AddCleanerButton("Clean All (System)", IconHelper.GetActionIcon("Run"), (s, e) => MenuCleanSystem_Click(s, e));
+
 
         _cleanerContentPanel.Controls.Add(_cleanerButtonsPanel);
         _cleanerContentPanel.Controls.Add(lblTitle);
@@ -467,15 +469,16 @@ namespace OPTools
         };
 
         // Add buttons
-        AddNetworkButton("Flush DNS", "\uE896", async () => await NetworkReset.FlushDns());
-        AddNetworkButton("Release IP", "\uE896", async () => await NetworkReset.ReleaseIp());
-        AddNetworkButton("Renew IP", "\uE896", async () => await NetworkReset.RenewIp());
-        AddNetworkButton("Reset Winsock", "\uE896", async () => await NetworkReset.ResetWinsock());
-        AddNetworkButton("Reset TCP/IP", "\uE896", async () => await NetworkReset.ResetTcpIp());
-        AddNetworkButton("Reset Proxy", "\uE896", async () => await NetworkReset.ResetProxy());
+        AddNetworkButton("Flush DNS", IconHelper.GetActionIcon("Run"), async () => await NetworkReset.FlushDns());
+        AddNetworkButton("Release IP", IconHelper.GetActionIcon("Run"), async () => await NetworkReset.ReleaseIp());
+        AddNetworkButton("Renew IP", IconHelper.GetActionIcon("Run"), async () => await NetworkReset.RenewIp());
+        AddNetworkButton("Reset Winsock", IconHelper.GetActionIcon("Run"), async () => await NetworkReset.ResetWinsock());
+        AddNetworkButton("Reset TCP/IP", IconHelper.GetActionIcon("Run"), async () => await NetworkReset.ResetTcpIp());
+        AddNetworkButton("Reset Proxy", IconHelper.GetActionIcon("Run"), async () => await NetworkReset.ResetProxy());
         
         // Separator or distinct style for Reset All
-        AddNetworkButton("Reset All Network", "\uE968", async () => await NetworkReset.ResetInternetStack(), true);
+        AddNetworkButton("Reset All Network", IconHelper.GetActionIcon("Run"), async () => await NetworkReset.ResetInternetStack(), true);
+
 
         _networkContentPanel.Controls.Add(_networkButtonsPanel);
         _networkContentPanel.Controls.Add(lblTitle);
@@ -513,9 +516,10 @@ namespace OPTools
         };
 
         // Add buttons
-        AddProcessButton("Kill Node.js", "\uE71A", (s, e) => MenuKillNodeJs_Click(s, e));
-        AddProcessButton("Kill Dev Tools", "\uE71A", (s, e) => MenuKillDevTools_Click(s, e));
-        AddProcessButton("Kill by Port", "\uE71A", (s, e) => MenuKillPort_Click(s, e));
+        AddProcessButton("Kill Node.js", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillNodeJs_Click(s, e));
+        AddProcessButton("Kill Dev Tools", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillDevTools_Click(s, e));
+        AddProcessButton("Kill by Port", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillPort_Click(s, e));
+
 
         _processesContentPanel.Controls.Add(_processesButtonsPanel);
         _processesContentPanel.Controls.Add(lblTitle);
@@ -588,9 +592,10 @@ namespace OPTools
         };
 
         // Add buttons
-        AddSettingsButton("Install Context Menu", "\uE710", (s, e) => MenuInstallContext_Click(s, e));
-        AddSettingsButton("Uninstall Context Menu", "\uE74D", (s, e) => MenuUninstallContext_Click(s, e));
-        AddSettingsButton("About", "\uE946", (s, e) => MenuAbout_Click(s, e));
+        AddSettingsButton("Install Context Menu", IconHelper.GetActionIcon("Add"), (s, e) => MenuInstallContext_Click(s, e));
+        AddSettingsButton("Uninstall Context Menu", IconHelper.GetActionIcon("Delete"), (s, e) => MenuUninstallContext_Click(s, e));
+        AddSettingsButton("About", IconHelper.GetActionIcon("Refresh"), (s, e) => MenuAbout_Click(s, e));
+
 
         _settingsContentPanel.Controls.Add(_settingsButtonsPanel);
         _settingsContentPanel.Controls.Add(settingsOptionsPanel);
@@ -598,13 +603,13 @@ namespace OPTools
         _contentPanel.Controls.Add(_settingsContentPanel);
     }
 
-    private void InitializeNpmHandlerPanel()
+    private void InitializePackageHandlerPanel()
     {
-        _npmHandlerPanel = new NpmHandlerPanel
+        _packageHandlerPanel = new PackageHandlerPanel
         {
             Visible = false
         };
-        _contentPanel.Controls.Add(_npmHandlerPanel);
+        _contentPanel.Controls.Add(_packageHandlerPanel);
     }
 
     private void InitializeBackupSchedulerPanel()
@@ -742,17 +747,18 @@ namespace OPTools
         _notifyIcon.Visible = enabled;
     }
 
-    private void AddProcessButton(string text, string icon, EventHandler action, string tooltipText = "")
+    private void AddProcessButton(string text, Image icon, EventHandler action, string tooltipText = "")
     {
         var btn = new ModernButton
         {
             Text = text,
-            IconChar = icon,
+            Image = icon,
             BackColor = _cAccent,
             Width = 200,
             Height = 40,
             Margin = new Padding(0, 0, 16, 16)
         };
+
         btn.Click += action;
         if (!string.IsNullOrEmpty(tooltipText))
         {
@@ -761,17 +767,18 @@ namespace OPTools
         _processesButtonsPanel.Controls.Add(btn);
     }
 
-    private void AddSettingsButton(string text, string icon, EventHandler action, string tooltipText = "")
+    private void AddSettingsButton(string text, Image icon, EventHandler action, string tooltipText = "")
     {
         var btn = new ModernButton
         {
             Text = text,
-            IconChar = icon,
+            Image = icon,
             BackColor = _cAccent,
             Width = 200,
             Height = 40,
             Margin = new Padding(0, 0, 16, 16)
         };
+
         btn.Click += action;
         if (!string.IsNullOrEmpty(tooltipText))
         {
@@ -780,12 +787,12 @@ namespace OPTools
         _settingsButtonsPanel.Controls.Add(btn);
     }
 
-    private void AddCleanerButton(string text, string icon, EventHandler action, string tooltipText = "")
+    private void AddCleanerButton(string text, Image icon, EventHandler action, string tooltipText = "")
     {
         var btn = new ModernButton
         {
             Text = text,
-            IconChar = icon,
+            Image = icon,
             BackColor = _cAccent,
             Width = 200,
             Height = 40,
@@ -799,17 +806,19 @@ namespace OPTools
         _cleanerButtonsPanel.Controls.Add(btn);
     }
 
-    private void AddNetworkButton(string text, string icon, Func<Task<ResetResult>> action, bool isDanger = false)
+
+    private void AddNetworkButton(string text, Image icon, Func<Task<ResetResult>> action, bool isDanger = false)
     {
         var btn = new ModernButton
         {
             Text = text,
-            IconChar = icon,
+            Image = icon,
             BackColor = isDanger ? _cDanger : _cAccent,
             Width = 200,
             Height = 40,
             Margin = new Padding(0, 0, 16, 16)
         };
+
 
         btn.Click += async (s, e) =>
         {
@@ -850,7 +859,7 @@ namespace OPTools
         _navProcesses.IsActive = viewName == "processes";
         _navContextMenu.IsActive = viewName == "contextmenu";
         _navApplications.IsActive = viewName == "applications";
-        _navNpmHandler.IsActive = viewName == "npmhandler";
+        _navPackageHandler.IsActive = viewName == "packagehandler";
         _navBackupScheduler.IsActive = viewName == "backupscheduler";
         _navSettings.IsActive = viewName == "settings";
 
@@ -864,13 +873,13 @@ namespace OPTools
         _networkContentPanel.Visible = viewName == "network";
         _processesContentPanel.Visible = viewName == "processes";
         _contextMenuContentPanel.Visible = viewName == "contextmenu";
-        _npmHandlerPanel.Visible = viewName == "npmhandler";
+        _packageHandlerPanel.Visible = viewName == "packagehandler";
         _backupSchedulerPanel.Visible = viewName == "backupscheduler";
         _settingsContentPanel.Visible = viewName == "settings";
 
-        if (viewName == "npmhandler")
+        if (viewName == "packagehandler")
         {
-            _npmHandlerPanel.Initialize();
+            _packageHandlerPanel.Initialize();
         }
 
         if (viewName == "backupscheduler")
@@ -910,11 +919,11 @@ namespace OPTools
         if (e.Data == null || _appLauncher == null)
             return;
 
-        if (e.Data.GetDataPresent(DataFormats.FileDrop))
-        {
-            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            
-            if (files != null && files.Length > 0)
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
+                
+                if (files != null && files.Length > 0)
             {
                 foreach (string filePath in files)
                 {
@@ -1149,12 +1158,12 @@ namespace OPTools
         _headerPanel.Controls.Add(_btnRefresh); // Refresh docked Right
     }
 
-    private SidebarButton CreateSidebarButton(string text, string icon, string tooltipText = "", bool isActive = false)
+    private SidebarButton CreateSidebarButton(string text, Image icon, string tooltipText = "", bool isActive = false)
     {
         var btn = new SidebarButton
         {
             Text = text,
-            IconChar = icon,
+            Image = icon,
             IsActive = isActive,
             Dock = DockStyle.Top,
             Height = 48
@@ -1168,12 +1177,12 @@ namespace OPTools
         return btn;
     }
 
-    private ModernButton CreateActionButton(string text, string icon, Color color, string tooltipText = "")
+    private ModernButton CreateActionButton(string text, Image icon, Color color, string tooltipText = "")
     {
         var btn = new ModernButton
         {
             Text = text,
-            IconChar = icon,
+            Image = icon,
             BackColor = color,
             Width = 140,
             Margin = new Padding(0, 0, 16, 0)
@@ -1187,6 +1196,7 @@ namespace OPTools
         return btn;
     }
 
+
     // Custom Drawing for ListView
     private void ListView_DrawColumnHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
     {
@@ -1197,7 +1207,7 @@ namespace OPTools
         using (var brush = new SolidBrush(_cText))
         {
             var format = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near };
-            e.Graphics.DrawString(e.Header.Text, _listView.Font, brush, new Rectangle(e.Bounds.X + 5, e.Bounds.Y, e.Bounds.Width - 5, e.Bounds.Height), format);
+            e.Graphics.DrawString(e.Header?.Text ?? string.Empty, _listView.Font, brush, new Rectangle(e.Bounds.X + 5, e.Bounds.Y, e.Bounds.Width - 5, e.Bounds.Height), format);
         }
     }
 
@@ -1209,7 +1219,7 @@ namespace OPTools
     private void ListView_DrawSubItem(object? sender, DrawListViewSubItemEventArgs e)
     {
         // Custom draw to handle selection color
-        if (e.Item.Selected)
+        if (e.Item?.Selected == true)
         {
             using (var brush = new SolidBrush(Color.FromArgb(50, 50, 50)))
             {
@@ -1225,15 +1235,15 @@ namespace OPTools
         }
 
         // Draw Text
-        var textBrush = e.Item.Selected ? Brushes.White : new SolidBrush(_cText);
+        var textBrush = (e.Item?.Selected == true) ? Brushes.White : new SolidBrush(_cText);
         
         // Handle system process warning color
-        if (e.Item.Tag is LockInfo info && ProcessManager.IsSystemProcess(info.ProcessId))
+        if (e.Item?.Tag is LockInfo info && ProcessManager.IsSystemProcess(info.ProcessId))
         {
             textBrush = Brushes.Yellow;
         }
 
-        e.Graphics.DrawString(e.SubItem.Text, _listView.Font, textBrush, new Rectangle(e.Bounds.X + 5, e.Bounds.Y, e.Bounds.Width - 5, e.Bounds.Height), new StringFormat { LineAlignment = StringAlignment.Center });
+        e.Graphics.DrawString(e.SubItem?.Text ?? string.Empty, _listView.Font, textBrush, new Rectangle(e.Bounds.X + 5, e.Bounds.Y, e.Bounds.Width - 5, e.Bounds.Height), new StringFormat { LineAlignment = StringAlignment.Center });
     }
 
     private void ShowContextMenuForButton(Button btn, ContextMenuStrip menu)

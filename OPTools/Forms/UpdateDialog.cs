@@ -25,9 +25,9 @@ namespace OPTools.Forms
         private readonly Color _cTextDim = Color.FromArgb(150, 150, 150);
         private readonly Color _cGridHeader = Color.FromArgb(45, 45, 48);
 
-        private readonly List<NpmPackage> _packages;
-        private readonly NpmUpdater _updater;
-        private readonly NpmDatabase _database;
+        private readonly List<PackageInfo> _packages;
+        private readonly PackageUpdater _updater;
+        private readonly PackageDatabase _database;
         
         private Panel _contentPanel = null!;
         private Panel _footerPanel = null!;
@@ -36,14 +36,15 @@ namespace OPTools.Forms
         private Label _lblStatus = null!;
         private ProgressBar _progressBar = null!;
         
-        private List<(NpmPackage package, TextBox versionInput)> _packageInputs = new();
-        private List<NpmUpdateResult> _results = new();
+        private List<(PackageInfo package, TextBox versionInput)> _packageInputs = new();
+        private List<PackageUpdateResult> _results = new();
         private bool _isUpdating = false;
         private bool _updateCompleted = false;
+        private ToolTip _toolTip = null!;
 
-        public List<NpmUpdateResult> Results => _results;
+        public List<PackageUpdateResult> Results => _results;
 
-        public UpdateDialog(List<NpmPackage> packages, NpmUpdater updater, NpmDatabase database)
+        public UpdateDialog(List<PackageInfo> packages, PackageUpdater updater, PackageDatabase database)
         {
             _packages = packages;
             _updater = updater;
@@ -54,6 +55,12 @@ namespace OPTools.Forms
 
         private void InitializeDialog()
         {
+            _toolTip = new ToolTip();
+            _toolTip.AutoPopDelay = 5000;
+            _toolTip.InitialDelay = 1000;
+            _toolTip.ReshowDelay = 500;
+            _toolTip.ShowAlways = true;
+
             this.Text = $"Update Packages ({_packages.Count})";
             this.Size = new Size(700, 550);
             this.StartPosition = FormStartPosition.CenterParent;
@@ -89,6 +96,7 @@ namespace OPTools.Forms
             _btnClose.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 80);
             _btnClose.Click += (s, e) => this.Close();
             _btnClose.Location = new Point(_footerPanel.Width - 240, 15);
+            _toolTip.SetToolTip(_btnClose, "Close this dialog without updating");
 
             _btnUpdate = new Button
             {
@@ -104,6 +112,7 @@ namespace OPTools.Forms
             _btnUpdate.FlatAppearance.BorderSize = 0;
             _btnUpdate.Click += BtnUpdate_Click;
             _btnUpdate.Location = new Point(_footerPanel.Width - 130, 15);
+            _toolTip.SetToolTip(_btnUpdate, "Start updating selected packages");
 
             _lblStatus = new Label
             {
@@ -199,7 +208,7 @@ namespace OPTools.Forms
             }
         }
 
-        private Panel CreatePackageCard(NpmPackage pkg, ref int yPos)
+        private Panel CreatePackageCard(PackageInfo pkg, ref int yPos)
         {
             var card = new Panel
             {
@@ -343,7 +352,7 @@ namespace OPTools.Forms
 
                     _lblStatus.Text = $"Updating {pkg.Name}... ({i + 1}/{_packages.Count})";
                     _progressBar.Value = i + 1;
-                    Application.DoEvents();
+                    // Application.DoEvents(); // Removed to prevent re-entrancy and thread issues
 
                     var result = await _updater.UpdatePackageAsync(pkg, targetVersion);
                     _results.Add(result);
@@ -378,7 +387,7 @@ namespace OPTools.Forms
             }
         }
 
-        private void UpdateCardStatus(int index, NpmUpdateResult result)
+        private void UpdateCardStatus(int index, PackageUpdateResult result)
         {
             if (index >= _contentPanel.Controls.Count) return;
             

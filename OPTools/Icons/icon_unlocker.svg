@@ -1,0 +1,27 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="unlockerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#37474f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#263238;stop-opacity:1" />
+    </linearGradient>
+    <filter id="blueGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Lock Body -->
+  <rect x="16" y="24" width="32" height="32" rx="6" ry="6" fill="url(#unlockerGrad)" stroke="#546e7a" stroke-width="2"/>
+  
+  <!-- Open Shackle -->
+  <path d="M20 24 L20 14 A12 12 0 0 1 44 14 L44 24" 
+        stroke="#00e5ff" stroke-width="4" stroke-linecap="round" fill="none" 
+        filter="url(#blueGlow)"/>
+  
+  <!-- Keyhole -->
+  <circle cx="32" cy="36" r="5" fill="#00e5ff" filter="url(#blueGlow)"/>
+  <rect x="30" y="40" width="4" height="8" fill="#00e5ff" filter="url(#blueGlow)"/>
+</svg>

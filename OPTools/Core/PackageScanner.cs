@@ -12,11 +12,33 @@ namespace OPTools.Core
     /// <summary>
     /// Scans directories for packages across multiple ecosystems (NPM, Python, C++)
     /// </summary>
-    public class NpmScanner
+    public class PackageScanner
     {
         private readonly HashSet<string> _excludedDirs = new(StringComparer.OrdinalIgnoreCase)
         {
             "node_modules",
+            "vcpkg_installed",
+            "vendor",
+            "bower_components",
+            "jspm_packages",
+            "Debug",
+            "Release",
+            "x64",
+            "x86",
+            "test",
+            "tests",
+            "docs",
+            "doc",
+            "examples",
+            "example",
+            "samples",
+            "sample",
+            ".idea",
+            ".vscode",
+            ".vs",
+            "cmake-build-debug",
+            "cmake-build-release",
+            "artifacts",
             ".git",
             ".svn",
             "bin",
@@ -33,6 +55,8 @@ namespace OPTools.Core
             "env",
             ".tox"
         };
+
+        private const int MaxScanDepth = 3;
 
         // Python project markers (order matters - first found wins)
         private readonly string[] _pythonMarkers = 
@@ -55,43 +79,53 @@ namespace OPTools.Core
         };
 
         /// <summary>
-        /// Scans a directory for projects of the specified ecosystem type.
+        /// Scans a directory for projects.
         /// </summary>
-        public async Task<NpmScanResult> ScanDirectoryAsync(string rootPath, Ecosystem ecosystem, IProgress<string>? progress = null)
+        public async Task<PackageScanResult> ScanDirectoryAsync(string rootPath, Ecosystem ecosystem, IProgress<string>? progress = null)
         {
-            var stopwatch = Stopwatch.StartNew();
-            var result = new NpmScanResult();
-            
-            await Task.Run(() =>
+            return await Task.Run(() =>
             {
-                progress?.Report($"Scanning for {ecosystem} projects in {Path.GetFileName(rootPath)}...");
-                
-                switch (ecosystem)
+                var result = new PackageScanResult();
+                try
                 {
-                    case Ecosystem.NPM:
-                        ScanForNpmProjects(rootPath, result, progress);
-                        break;
-                    case Ecosystem.Python:
-                        ScanForPythonProjects(rootPath, result, progress);
-                        break;
-                    case Ecosystem.Cpp:
-                        ScanForCppProjects(rootPath, result, progress);
-                        break;
+                    if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath))
+                    {
+                        return result;
+                    }
+
+                    var sw = Stopwatch.StartNew();
+                    progress?.Report($"Scanning {rootPath} for {ecosystem} projects...");
+
+                    switch (ecosystem)
+                    {
+                        case Ecosystem.NPM:
+                            ScanForNpmProjects(rootPath, result, progress);
+                            break;
+                        case Ecosystem.Python:
+                            ScanForPythonProjects(rootPath, result, progress);
+                            break;
+                        case Ecosystem.Cpp:
+                            ScanForCppProjects(rootPath, result, progress);
+                            break;
+                    }
+
+                    sw.Stop();
+                    result.ScanDuration = sw.Elapsed;
+                    result.PackagesFound = result.Packages.Count;
                 }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Scan failed: {ex.Message}");
+                }
+
+                return result;
             });
-            
-            stopwatch.Stop();
-            result.ScanDuration = stopwatch.Elapsed;
-            result.PackagesFound = result.Packages.Count;
-            result.NewPackages = result.Packages.Count;
-            
-            return result;
         }
 
         /// <summary>
         /// Scans a directory for npm projects (legacy overload for backward compatibility).
         /// </summary>
-        public async Task<NpmScanResult> ScanDirectoryAsync(string rootPath, IProgress<string>? progress = null)
+        public async Task<PackageScanResult> ScanDirectoryAsync(string rootPath, IProgress<string>? progress = null)
         {
             return await ScanDirectoryAsync(rootPath, Ecosystem.NPM, progress);
         }
@@ -99,10 +133,10 @@ namespace OPTools.Core
         /// <summary>
         /// Scans a specific folder as a project, skipping recursive discovery.
         /// </summary>
-        public async Task<NpmScanResult> ScanSingleProjectAsync(string projectPath, Ecosystem? ecosystem, IProgress<string>? progress = null)
+        public async Task<PackageScanResult> ScanSingleProjectAsync(string projectPath, Ecosystem? ecosystem, IProgress<string>? progress = null)
         {
             var stopwatch = Stopwatch.StartNew();
-            var result = new NpmScanResult();
+            var result = new PackageScanResult();
             
             await Task.Run(() =>
             {
@@ -155,7 +189,7 @@ namespace OPTools.Core
                 if (!foundInfo && result.Projects.Count == 0)
                 {
                     // Fallback: Create generic project entry even if empty
-                     var project = new NpmProject
+                     var project = new ProjectInfo
                     {
                         Name = Path.GetFileName(projectPath),
                         Path = projectPath,
@@ -179,7 +213,7 @@ namespace OPTools.Core
 
         #region NPM Scanning
 
-        private void ScanForNpmProjects(string rootPath, NpmScanResult result, IProgress<string>? progress)
+        private void ScanForNpmProjects(string rootPath, PackageScanResult result, IProgress<string>? progress)
         {
             // First, check if the selected directory itself is a project
             var rootPackageJsonPath = Path.Combine(rootPath, "package.json");
@@ -218,7 +252,7 @@ namespace OPTools.Core
 
         #region Python Scanning
 
-        private void ScanForPythonProjects(string rootPath, NpmScanResult result, IProgress<string>? progress)
+        private void ScanForPythonProjects(string rootPath, PackageScanResult result, IProgress<string>? progress)
         {
             // Check if root is a Python project
             var rootMarker = FindPythonMarker(rootPath);
@@ -260,12 +294,12 @@ namespace OPTools.Core
         private List<(string Path, string Marker)> FindPythonProjects(string rootPath, IProgress<string>? progress)
         {
             var projects = new List<(string, string)>();
-            var queue = new Queue<string>();
-            queue.Enqueue(rootPath);
+            var queue = new Queue<(string Path, int Depth)>();
+            queue.Enqueue((rootPath, 0));
 
             while (queue.Count > 0)
             {
-                var currentDir = queue.Dequeue();
+                var (currentDir, depth) = queue.Dequeue();
                 try
                 {
                     var dirName = Path.GetFileName(currentDir);
@@ -279,11 +313,13 @@ namespace OPTools.Core
                         continue; // Don't recurse into project directories
                     }
 
+                    if (depth >= MaxScanDepth) continue;
+
                     foreach (var subDir in Directory.GetDirectories(currentDir))
                     {
                         var subDirName = Path.GetFileName(subDir);
                         if (!_excludedDirs.Contains(subDirName))
-                            queue.Enqueue(subDir);
+                            queue.Enqueue((subDir, depth + 1));
                     }
                 }
                 catch (UnauthorizedAccessException uex) { System.Diagnostics.Debug.WriteLine($"Access denied scanning {currentDir}: {uex.Message}"); }
@@ -292,7 +328,7 @@ namespace OPTools.Core
             return projects;
         }
 
-        private void ProcessPythonProjectAtPath(string projectPath, string markerFile, NpmScanResult result, IProgress<string>? progress)
+        private void ProcessPythonProjectAtPath(string projectPath, string markerFile, PackageScanResult result, IProgress<string>? progress)
         {
             try
             {
@@ -301,7 +337,7 @@ namespace OPTools.Core
 
                 var packages = ParsePythonDependencies(projectPath, markerFile);
 
-                var project = new NpmProject
+                var project = new ProjectInfo
                 {
                     Name = projectName,
                     Path = projectPath,
@@ -321,9 +357,9 @@ namespace OPTools.Core
             }
         }
 
-        private List<NpmPackage> ParsePythonDependencies(string projectPath, string markerFile)
+        private List<PackageInfo> ParsePythonDependencies(string projectPath, string markerFile)
         {
-            var packages = new List<NpmPackage>();
+            var packages = new List<PackageInfo>();
             var filePath = Path.Combine(projectPath, markerFile);
 
             try
@@ -344,7 +380,7 @@ namespace OPTools.Core
 
                         if (!string.IsNullOrEmpty(name))
                         {
-                            packages.Add(new NpmPackage
+                            packages.Add(new PackageInfo
                             {
                                 Name = name,
                                 Version = version,
@@ -380,7 +416,7 @@ namespace OPTools.Core
                             var version = parts.Length > 1 ? parts[1].Trim().Trim('"', ',') : "*";
                             if (!string.IsNullOrEmpty(name) && name != "python")
                             {
-                                packages.Add(new NpmPackage
+                                packages.Add(new PackageInfo
                                 {
                                     Name = name,
                                     Version = version,
@@ -407,7 +443,7 @@ namespace OPTools.Core
 
         #region C++ Scanning
 
-        private void ScanForCppProjects(string rootPath, NpmScanResult result, IProgress<string>? progress)
+        private void ScanForCppProjects(string rootPath, PackageScanResult result, IProgress<string>? progress)
         {
             // Check if root is a C++ project
             var rootMarker = FindCppMarker(rootPath);
@@ -490,7 +526,7 @@ namespace OPTools.Core
             return projects;
         }
 
-        private void ProcessCppProjectAtPath(string projectPath, string markerFile, NpmScanResult result, IProgress<string>? progress)
+        private void ProcessCppProjectAtPath(string projectPath, string markerFile, PackageScanResult result, IProgress<string>? progress)
         {
             try
             {
@@ -499,7 +535,7 @@ namespace OPTools.Core
 
                 var packages = ParseCppDependencies(projectPath, markerFile);
 
-                var project = new NpmProject
+                var project = new ProjectInfo
                 {
                     Name = projectName,
                     Path = projectPath,
@@ -519,9 +555,9 @@ namespace OPTools.Core
             }
         }
 
-        private List<NpmPackage> ParseCppDependencies(string projectPath, string markerFile)
+        private List<PackageInfo> ParseCppDependencies(string projectPath, string markerFile)
         {
-            var packages = new List<NpmPackage>();
+            var packages = new List<PackageInfo>();
             var filePath = Path.Combine(projectPath, markerFile);
 
             try
@@ -530,22 +566,29 @@ namespace OPTools.Core
                 {
                     var content = File.ReadAllText(filePath);
                     var json = JObject.Parse(content);
-                    var dependencies = json["dependencies"] as JArray;
-                    if (dependencies != null)
+                    var deps = json["dependencies"];
+
+                    if (deps != null)
                     {
-                        foreach (var dep in dependencies)
+                        foreach (var dep in deps)
                         {
-                            var name = dep.Type == JTokenType.String ? dep.ToString() : dep["name"]?.ToString();
+                            string name = "";
+                            if (dep.Type == JTokenType.String)
+                                name = dep.ToString();
+                            else if (dep.Type == JTokenType.Object)
+                                name = dep["name"]?.ToString() ?? "";
+
                             if (!string.IsNullOrEmpty(name))
                             {
-                                packages.Add(new NpmPackage
+                                packages.Add(new PackageInfo
                                 {
                                     Name = name,
-                                    Version = "*",
+                                    Version = "unknown", // Vcpkg versions are often managed by git commit
                                     Path = projectPath,
                                     ProjectPath = projectPath,
                                     CreatedAt = DateTime.Now,
-                                    UpdatedAt = DateTime.Now
+                                    UpdatedAt = DateTime.Now,
+                                    IsDev = false
                                 });
                             }
                         }
@@ -554,7 +597,8 @@ namespace OPTools.Core
                 else if (markerFile == "conanfile.txt")
                 {
                     var lines = File.ReadAllLines(filePath);
-                    var inRequires = false;
+                    bool inRequires = false;
+
                     foreach (var line in lines)
                     {
                         var trimmed = line.Trim();
@@ -563,33 +607,37 @@ namespace OPTools.Core
                             inRequires = true;
                             continue;
                         }
-                        if (trimmed.StartsWith("[") && inRequires)
+                        if (trimmed.StartsWith("[") && trimmed != "[requires]")
                         {
                             inRequires = false;
                         }
+
                         if (inRequires && !string.IsNullOrEmpty(trimmed))
                         {
                             var parts = trimmed.Split('/');
-                            var name = parts[0];
-                            var version = parts.Length > 1 ? parts[1].Split('@')[0] : "*";
-                            packages.Add(new NpmPackage
+                            if (parts.Length > 0)
                             {
-                                Name = name,
-                                Version = version,
-                                Path = projectPath,
-                                ProjectPath = projectPath,
-                                CreatedAt = DateTime.Now,
-                                UpdatedAt = DateTime.Now
-                            });
+                                var name = parts[0];
+                                var version = parts.Length > 1 ? parts[1] : "unknown";
+
+                                packages.Add(new PackageInfo
+                                {
+                                    Name = name,
+                                    Version = version,
+                                    Path = projectPath,
+                                    ProjectPath = projectPath,
+                                    CreatedAt = DateTime.Now,
+                                    UpdatedAt = DateTime.Now,
+                                    IsDev = false
+                                });
+                            }
                         }
                     }
                 }
-                // CMakeLists.txt parsing would require more complex analysis
-                // For now, we just mark it as a C++ project without parsing deps
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error parsing C++ dependencies: {ex.Message}");
+                Debug.WriteLine($"Error parsing C++ dependencies in {projectPath}: {ex.Message}");
             }
 
             return packages;
@@ -600,7 +648,7 @@ namespace OPTools.Core
         /// <summary>
         /// Processes a single NPM project at the given path and adds it to the result.
         /// </summary>
-        private void ProcessNpmProjectAtPath(string packageJsonPath, string projectPath, NpmScanResult result, IProgress<string>? progress)
+        private void ProcessNpmProjectAtPath(string packageJsonPath, string projectPath, PackageScanResult result, IProgress<string>? progress)
         {
             try
             {
@@ -611,7 +659,7 @@ namespace OPTools.Core
                 
                 if (packages.Count > 0)
                 {
-                    var project = new NpmProject
+                    var project = new ProjectInfo
                     {
                         Name = projectName,
                         Path = projectPath,
@@ -634,9 +682,9 @@ namespace OPTools.Core
         /// <summary>
         /// Scans globally installed npm packages
         /// </summary>
-        public async Task<List<NpmPackage>> ScanGlobalPackagesAsync(IProgress<string>? progress = null)
+        public async Task<List<PackageInfo>> ScanGlobalPackagesAsync(IProgress<string>? progress = null)
         {
-            var packages = new List<NpmPackage>();
+            var packages = new List<PackageInfo>();
             
             try
             {
@@ -657,14 +705,15 @@ namespace OPTools.Core
                             var packageInfo = prop.Value as JObject;
                             var version = packageInfo?["version"]?.ToString() ?? "unknown";
                             
-                            packages.Add(new NpmPackage
+                            packages.Add(new PackageInfo
                             {
                                 Name = packageName,
                                 Version = version,
                                 Path = "__GLOBAL__",
                                 ProjectPath = "__GLOBAL__",
                                 CreatedAt = DateTime.Now,
-                                UpdatedAt = DateTime.Now
+                                UpdatedAt = DateTime.Now,
+                                IsDev = false
                             });
                         }
                     }
@@ -673,6 +722,121 @@ namespace OPTools.Core
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error scanning global packages: {ex.Message}");
+            }
+            
+            return packages;
+        }
+
+        /// <summary>
+        /// Scans globally installed bun packages
+        /// </summary>
+        public async Task<List<PackageInfo>> ScanGlobalBunPackagesAsync(IProgress<string>? progress = null)
+        {
+            var packages = new List<PackageInfo>();
+            
+            try
+            {
+                progress?.Report("Scanning global bun packages...");
+                
+                var output = await RunNpmCommandAsync("bun pm ls -g");
+                
+                if (!string.IsNullOrEmpty(output))
+                {
+                    var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    
+                    if (lines.Length > 0)
+                    {
+                        foreach (var line in lines)
+                        {
+                            var trimmed = line.Trim();
+                            
+                            // Check if line contains @ and not at start (scope starts with @, but version separator is last @)
+                            var atIndex = trimmed.LastIndexOf('@');
+                            if (atIndex > 0 && atIndex < trimmed.Length - 1)
+                            {
+                                // Simple validation: version shouldn't contain spaces
+                                var version = trimmed.Substring(atIndex + 1);
+                                if (version.Contains(" ")) continue;
+                                
+                                var namePart = trimmed.Substring(0, atIndex);
+                                
+                                // Remove common tree prefixes
+                                namePart = namePart.Replace("├──", "").Replace("└──", "").Replace("│", "").Trim();
+                                
+                                if (!string.IsNullOrWhiteSpace(namePart))
+                                {
+                                    packages.Add(new PackageInfo
+                                    {
+                                        Name = namePart,
+                                        Version = version,
+                                        Path = "__GLOBAL_BUN__",
+                                        ProjectPath = "__GLOBAL_BUN__",
+                                        CreatedAt = DateTime.Now,
+                                        UpdatedAt = DateTime.Now,
+                                        IsDev = false
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error scanning global bun packages: {ex.Message}");
+            }
+            
+            return packages;
+        }
+
+        /// <summary>
+        /// Scans globally installed pip packages
+        /// </summary>
+        public async Task<List<PackageInfo>> ScanGlobalPipPackagesAsync(IProgress<string>? progress = null)
+        {
+            var packages = new List<PackageInfo>();
+            
+            try
+            {
+                progress?.Report("Scanning global pip packages...");
+                
+                var output = await RunNpmCommandAsync("pip list --format=json");
+                
+                if (!string.IsNullOrEmpty(output))
+                {
+                    try 
+                    {
+                        var json = JArray.Parse(output);
+                        
+                        foreach (var item in json)
+                        {
+                            var name = item["name"]?.ToString();
+                            var version = item["version"]?.ToString();
+                            
+                            if (!string.IsNullOrEmpty(name))
+                            {
+                                packages.Add(new PackageInfo
+                                {
+                                    Name = name,
+                                    Version = version ?? "unknown",
+                                    Path = "__GLOBAL_PYTHON__",
+                                    ProjectPath = "__GLOBAL_PYTHON__",
+                                    CreatedAt = DateTime.Now,
+                                    UpdatedAt = DateTime.Now,
+                                    IsDev = false
+                                });
+                            }
+                        }
+                    }
+                    catch (JsonReaderException)
+                    {
+                        // Fallback or ignore if not JSON
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error scanning global pip packages: {ex.Message}");
             }
             
             return packages;
@@ -770,9 +934,9 @@ namespace OPTools.Core
             }
         }
 
-        private List<NpmPackage> ParsePackageJson(string packageJsonPath, string projectPath)
+        private List<PackageInfo> ParsePackageJson(string packageJsonPath, string projectPath)
         {
-            var packages = new List<NpmPackage>();
+            var packages = new List<PackageInfo>();
             
             try
             {
@@ -801,19 +965,19 @@ namespace OPTools.Core
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error parsing package.json: {ex.Message}");
+                Debug.WriteLine($"Error parsing package.json at {packageJsonPath}: {ex.Message}");
             }
             
             return packages;
         }
 
-        private NpmPackage CreatePackageFromDependency(string name, string versionSpec, string projectPath, bool isDev)
+        private PackageInfo CreatePackageFromDependency(string name, string versionSpec, string projectPath, bool isDev)
         {
             var version = CleanVersionSpec(versionSpec);
             var installedPath = Path.Combine(projectPath, "node_modules", name);
             var packageJsonPath = Path.Combine(installedPath, "package.json");
             
-            var package = new NpmPackage
+            var package = new PackageInfo
             {
                 Name = name,
                 Version = version, // Default to requested version until we verify installed
@@ -840,7 +1004,7 @@ namespace OPTools.Core
                     package.Description = json["description"]?.ToString();
                     package.Homepage = json["homepage"]?.ToString();
                     package.License = json["license"]?.Type == JTokenType.Object 
-                        ? json["license"]["type"]?.ToString() 
+                        ? json["license"]?["type"]?.ToString() 
                         : json["license"]?.ToString();
 
                     // Author handling (string or object)

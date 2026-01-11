@@ -1,0 +1,6 @@
+{
+  "name": "OPTools",
+  "version": "1.0.0",
+  "description": "C#/.NET application - package.json for Automaker compatibility only",
+  "private": true
+}

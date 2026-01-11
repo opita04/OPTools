@@ -201,28 +201,6 @@ public static class ContextMenuInstaller
         }
         catch { }
 
-        // 5. Try Assembly.Location (last resort, may not work in single-file)
-        try
-        {
-            exePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            if (!string.IsNullOrEmpty(exePath))
-            {
-                if (exePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-                {
-                    string exeCandidate = Path.ChangeExtension(exePath, ".exe");
-                    if (File.Exists(exeCandidate))
-                    {
-                        return exeCandidate;
-                    }
-                }
-                if (File.Exists(exePath))
-                {
-                    return exePath;
-                }
-            }
-        }
-        catch { }
-
         return string.Empty;
     }
 }

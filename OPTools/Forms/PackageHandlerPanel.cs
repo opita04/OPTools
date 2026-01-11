@@ -12,9 +12,9 @@ using Newtonsoft.Json;
 namespace OPTools.Forms
 {
     /// <summary>
-    /// NPM Package Manager Panel - Discovers and maintains npm packages across projects
+    /// Package Manager Panel - Discovers and maintains packages across projects
     /// </summary>
-    public class NpmHandlerPanel : Panel
+    public class PackageHandlerPanel : Panel
     {
         // Theme Colors (matching OPTools theme)
         private readonly Color _cBackground = Color.FromArgb(30, 30, 30);
@@ -29,9 +29,9 @@ namespace OPTools.Forms
         private readonly Color _cHover = Color.FromArgb(60, 60, 60);
 
         // Core Components
-        private NpmDatabase? _database;
-        private NpmScanner? _scanner;
-        private NpmUpdater? _updater;
+        private PackageDatabase? _database;
+        private PackageScanner? _scanner;
+        private PackageUpdater? _updater;
 
         // UI Components
         private Panel _headerPanel = null!;
@@ -63,9 +63,9 @@ namespace OPTools.Forms
         private ModernButton _btnAddFolder = null!; // New Add Manual Folder Button
 
         // Data
-        private List<NpmPackage> _allPackages = new();
-        private List<NpmProject> _allProjects = new();
-        private List<NpmPackage> _filteredPackages = new();
+        private List<PackageInfo> _allPackages = new();
+        private List<ProjectInfo> _allProjects = new();
+        private List<PackageInfo> _filteredPackages = new();
         
         // Error Logs (matching NPM Handler)
         private List<LogEntry> _errorLogs = new();
@@ -83,26 +83,46 @@ namespace OPTools.Forms
         private int _sortColumn = -1;
         private bool _sortAscending = true;
 
+        // Pagination state
+        private int _currentPage = 1;
+        private int _pageSize = 50;
+        private Panel _paginationPanel = null!;
+        private Button _btnPrevPage = null!;
+        private Button _btnNextPage = null!;
+        private Label _lblPageInfo = null!;
+
         private ToolTip _toolTip = null!;
 
-        public NpmHandlerPanel()
+        public PackageHandlerPanel()
         {
             InitializeComponents();
             InitializeContextMenu();
         }
 
-        public void Initialize()
+        public async void Initialize()
         {
             try
             {
-                _database = new NpmDatabase();
-                _scanner = new NpmScanner();
-                _updater = new NpmUpdater();
-                LoadData();
+                SetLoading(true);
+                UpdateStatus("Initializing database...");
+                
+                // Initialize database on background thread to prevent UI freeze
+                await Task.Run(() =>
+                {
+                    _database = new PackageDatabase();
+                    _scanner = new PackageScanner();
+                    _updater = new PackageUpdater();
+                });
+                
+                await LoadDataAsync();
             }
             catch (Exception ex)
             {
                 UpdateStatus($"Error initializing: {ex.Message}");
+            }
+            finally
+            {
+                SetLoading(false);
             }
         }
 
@@ -122,7 +142,16 @@ namespace OPTools.Forms
             _headerPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 100,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                BackColor = _cBackground,
+                Padding = new Padding(0, 0, 0, 10)
+            };
+
+            Panel titlePanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 60,
                 BackColor = _cBackground
             };
 
@@ -144,6 +173,9 @@ namespace OPTools.Forms
                 Location = new Point(0, 30)
             };
             
+            titlePanel.Controls.Add(lblSubtitle);
+            titlePanel.Controls.Add(lblTitle);
+
             // Back Button (Initially Hidden) - Added to action panel for proper flow
             _btnBack = CreateActionButton("\u2190 All Projects", "\uE72B", _cGridHeader, "Return to projects view"); // Back Arrow Icon
             _btnBack.Width = 120;
@@ -153,24 +185,26 @@ namespace OPTools.Forms
             // Action Buttons Panel
             FlowLayoutPanel actionPanel = new FlowLayoutPanel
             {
-                Dock = DockStyle.Bottom,
-                Height = 45,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
+                WrapContents = true,
                 BackColor = _cBackground
             };
 
             _btnScanDirectory = CreateActionButton("Scan Directory", "\uE8B7", _cAccent, "Scan current directory for package.json");
-            _btnAddFolder = CreateActionButton("Add Folder", "\uE710", _cAccent, "Manually add a project folder"); // Add icon
+            _btnAddFolder = CreateActionButton("Add Folder", "\uE710", _cAccent, "Manually add a project folder", IconHelper.GetActionIcon("Add")); // Add icon
             _btnScanGlobal = CreateActionButton("Scan Global", "\uE774", _cAccent, "Scan for global npm packages");
-            _btnCheckUpdates = CreateActionButton("Check Updates", "\uE777", _cAccent, "Check for package updates");
+            _btnCheckUpdates = CreateActionButton("Check Updates", "\uE777", _cAccent, "Check for package updates", IconHelper.GetActionIcon("Refresh"));
             _btnUpdateAll = CreateActionButton("Update All", "\uE74A", _cSuccess, "Update all outdated packages");
-            _btnExport = CreateActionButton("Export", "\uE78C", Color.FromArgb(60, 60, 60), "Export package list");
-            _btnRefresh = CreateActionButton("Refresh", "\uE72C", Color.FromArgb(60, 60, 60), "Refresh package list");
+            _btnExport = CreateActionButton("Export", "\uE78C", Color.FromArgb(60, 60, 60), "Export package list", IconHelper.GetActionIcon("Save"));
+            _btnRefresh = CreateActionButton("Refresh", "\uE72C", Color.FromArgb(60, 60, 60), "Refresh package list", IconHelper.GetActionIcon("Refresh"));
             _btnLogs = CreateActionButton("Logs", "\uE7BA", Color.FromArgb(60, 60, 60), "View error logs");
-            _btnClearAll = CreateActionButton("Clear All", "\uE74D", _cDanger, "Clear all projects and packages");
+            _btnClearAll = CreateActionButton("Clear All", "\uE74D", _cDanger, "Clear all projects and packages", IconHelper.GetActionIcon("Delete"));
 
             _btnScanDirectory.Click += BtnScanDirectory_Click;
+
             _btnAddFolder.Click += BtnAddFolder_Click;
             _btnScanGlobal.Click += BtnScanGlobal_Click;
             _btnCheckUpdates.Click += BtnCheckUpdates_Click;
@@ -191,9 +225,8 @@ namespace OPTools.Forms
             actionPanel.Controls.Add(_btnLogs);
             actionPanel.Controls.Add(_btnClearAll);
 
-            _headerPanel.Controls.Add(lblTitle);
-            _headerPanel.Controls.Add(lblSubtitle);
             _headerPanel.Controls.Add(actionPanel);
+            _headerPanel.Controls.Add(titlePanel);
 
             // Stats Panel
             _statsPanel = new Panel
@@ -308,6 +341,65 @@ namespace OPTools.Forms
                 BackColor = _cBackground
             };
 
+            // Pagination Controls
+            _paginationPanel = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 40,
+                BackColor = _cBackground,
+                Visible = true
+            };
+
+            _btnPrevPage = new Button
+            {
+                Text = "◀ Prev",
+                Width = 80,
+                Height = 30,
+                BackColor = _cGridHeader,
+                ForeColor = _cText,
+                FlatStyle = FlatStyle.Flat,
+                Location = new Point(10, 5)
+            };
+            _btnPrevPage.Click += (s, e) => ChangePage(-1);
+
+            _btnNextPage = new Button
+            {
+                Text = "Next ▶",
+                Width = 80,
+                Height = 30,
+                BackColor = _cGridHeader,
+                ForeColor = _cText,
+                FlatStyle = FlatStyle.Flat,
+                Location = new Point(200, 5) // Will be adjusted
+            };
+            _btnNextPage.Click += (s, e) => ChangePage(1);
+
+            _lblPageInfo = new Label
+            {
+                Text = "Page 1 of 1",
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = _cTextDim,
+                Font = new Font("Segoe UI", 9),
+                Location = new Point(90, 5),
+                Width = 110,
+                Height = 30
+            };
+
+            _paginationPanel.Controls.Add(_btnPrevPage);
+            _paginationPanel.Controls.Add(_lblPageInfo);
+            _paginationPanel.Controls.Add(_btnNextPage);
+
+            // Center pagination controls
+            _paginationPanel.Resize += (s, e) =>
+            {
+                int totalWidth = _btnPrevPage.Width + _lblPageInfo.Width + _btnNextPage.Width + 20;
+                int startX = (_paginationPanel.Width - totalWidth) / 2;
+                _btnPrevPage.Location = new Point(startX, 5);
+                _lblPageInfo.Location = new Point(startX + _btnPrevPage.Width + 10, 5);
+                _btnNextPage.Location = new Point(startX + _btnPrevPage.Width + _lblPageInfo.Width + 20, 5);
+            };
+
             // 1. Package ListView (Hidden initially)
             _packageListView = new ListView
             {
@@ -348,6 +440,8 @@ namespace OPTools.Forms
                 FlowDirection = FlowDirection.LeftToRight
             };
 
+            // Add Pagination Panel FIRST so it docks to bottom
+            _contentPanel.Controls.Add(_paginationPanel);
             _contentPanel.Controls.Add(_packageListView);
             _contentPanel.Controls.Add(_projectsPanel);
 
@@ -377,7 +471,7 @@ namespace OPTools.Forms
             UpdateStatsPanel();
         }
         
-        private async Task UpdateSinglePackageAsync(NpmPackage package)
+        private async Task UpdateSinglePackageAsync(PackageInfo package)
         {
             SetLoading(true);
             UpdateStatus($"Updating {package.Name}...");
@@ -407,7 +501,7 @@ namespace OPTools.Forms
             }
         }
         
-        private async Task UninstallPackageAsync(NpmPackage package)
+        private async Task UninstallPackageAsync(PackageInfo package)
         {
             var result = MessageBox.Show(
                 $"Are you sure you want to uninstall {package.Name}?",
@@ -524,12 +618,13 @@ namespace OPTools.Forms
             _contextMenu.Items.Add(openFolderItem);
         }
 
-        private ModernButton CreateActionButton(string text, string icon, Color bgColor, string tooltipText = "")
+        private ModernButton CreateActionButton(string text, string icon, Color bgColor, string tooltipText = "", Image? image = null)
         {
             var btn = new ModernButton
             {
                 Text = text,
                 IconChar = icon,
+                Image = image,
                 BackColor = bgColor,
                 Width = 140,
                 Height = 40,
@@ -542,17 +637,31 @@ namespace OPTools.Forms
             return btn;
         }
 
+
         #region Data Loading and View Switching
 
         private void LoadData()
         {
+            // Fire-and-forget wrapper for synchronous callers
+            _ = LoadDataAsync();
+        }
+        
+        private async Task LoadDataAsync()
+        {
             try
             {
-                var allPackages = _database?.GetAllPackages() ?? new List<NpmPackage>();
-                var allProjects = _database?.GetAllProjects() ?? new List<NpmProject>();
-                
-                // Filter by current ecosystem (null = All ecosystems)
+                // Get ecosystem filter on UI thread
                 var ecosystem = GetSelectedEcosystem();
+                
+                // Run database queries on background thread
+                var (allPackages, allProjects) = await Task.Run(() =>
+                {
+                    var packages = _database?.GetAllPackages() ?? new List<PackageInfo>();
+                    var projects = _database?.GetAllProjects() ?? new List<ProjectInfo>();
+                    return (packages, projects);
+                });
+                
+                // Filter data (this is fast, can be on UI thread)
                 if (ecosystem.HasValue)
                 {
                     _allProjects = allProjects.Where(p => p.Ecosystem == ecosystem.Value).ToList();
@@ -567,7 +676,7 @@ namespace OPTools.Forms
                     _allPackages = allPackages;
                 }
                 
-                // Refresh current view
+                // Refresh current view (UI thread)
                 if (_currentView == ViewMode.Projects)
                 {
                     RenderProjects();
@@ -593,6 +702,8 @@ namespace OPTools.Forms
             _currentProjectFilter = null;
             _packageListView.Visible = false;
             _projectsPanel.Visible = true;
+            // Pagination visibility handled in RenderProjects, but ensure it's not hidden if needed
+            
             _btnBack.Visible = false;
             _chkOutdatedOnly.Visible = false; // Filter applies to packages usually
             _chkOutdatedOnly.Checked = false;
@@ -603,6 +714,7 @@ namespace OPTools.Forms
             _btnUpdateAll.Text = "Update All";
             _btnUpdateAll.IconChar = "\uE74A";
             
+            _currentPage = 1; // Reset to first page
             RenderProjects();
         }
 
@@ -611,6 +723,7 @@ namespace OPTools.Forms
             _currentView = ViewMode.Packages;
             _currentProjectFilter = projectPath;
             _projectsPanel.Visible = false;
+            _paginationPanel.Visible = false; // Hide pagination in package view
             _packageListView.Visible = true;
             _btnBack.Visible = true;
             _chkOutdatedOnly.Visible = true;
@@ -627,12 +740,18 @@ namespace OPTools.Forms
 
         private void RenderProjects()
         {
-            _projectsPanel.Controls.Clear();
+            // Properly dispose controls to prevent GDI handle leaks
+            while (_projectsPanel.Controls.Count > 0)
+            {
+                var ctrl = _projectsPanel.Controls[0];
+                _projectsPanel.Controls.RemoveAt(0);
+                ctrl.Dispose();
+            }
             _projectsPanel.SuspendLayout();
 
             var searchTerm = _txtSearch.Text.ToLower();
 
-            var projectsToRender = _allProjects.Where(p => 
+            var allFilteredProjects = _allProjects.Where(p => 
                 string.IsNullOrEmpty(searchTerm) || 
                 p.Name.ToLower().Contains(searchTerm) || 
                 p.Path.ToLower().Contains(searchTerm)
@@ -640,6 +759,29 @@ namespace OPTools.Forms
             .OrderByDescending(p => p.Path == "__GLOBAL__") // Global Packages first
             .ThenBy(p => p.Name)
             .ToList();
+
+            // Pagination Logic
+            int totalItems = allFilteredProjects.Count;
+            int totalPages = (int)Math.Ceiling((double)totalItems / _pageSize);
+            
+            // Ensure current page is valid
+            if (_currentPage < 1) _currentPage = 1;
+            if (_currentPage > totalPages && totalPages > 0) _currentPage = totalPages;
+            
+            var projectsToRender = allFilteredProjects
+                .Skip((_currentPage - 1) * _pageSize)
+                .Take(_pageSize)
+                .ToList();
+
+            // Update Pagination UI
+            _btnPrevPage.Enabled = _currentPage > 1;
+            _btnNextPage.Enabled = _currentPage < totalPages;
+            _lblPageInfo.Text = totalPages > 0 
+                ? $"Page {_currentPage} of {totalPages}" 
+                : "No projects";
+            
+            // Show/Hide pagination based on item count
+            _paginationPanel.Visible = totalItems > _pageSize;
 
             if (projectsToRender.Count == 0)
             {
@@ -664,7 +806,13 @@ namespace OPTools.Forms
             _projectsPanel.ResumeLayout();
         }
 
-        private Panel CreateProjectCard(NpmProject project)
+        private void ChangePage(int delta)
+        {
+            _currentPage += delta;
+            RenderProjects();
+        }
+
+        private Panel CreateProjectCard(ProjectInfo project)
         {
             // Calculate stats for this project
             var packages = _allPackages.Where(p => p.ProjectPath == project.Path).ToList();
@@ -786,6 +934,8 @@ namespace OPTools.Forms
         {
             if (_currentView == ViewMode.Projects)
             {
+                // Reset to page 1 when filtering projects
+                _currentPage = 1;
                 RenderProjects();
                 return;
             }
@@ -847,6 +997,7 @@ namespace OPTools.Forms
             {
                 "NPM" => Ecosystem.NPM,
                 "Python" => Ecosystem.Python,
+                "Bun" => Ecosystem.Bun,
                 "C++" => Ecosystem.Cpp,
                 _ => null // "All" or unknown = no filter
             };
@@ -878,7 +1029,13 @@ namespace OPTools.Forms
 
         private void UpdateStatsPanel()
         {
-            _statsPanel.Controls.Clear();
+            // Properly dispose controls to prevent GDI handle leaks
+            while (_statsPanel.Controls.Count > 0)
+            {
+                var ctrl = _statsPanel.Controls[0];
+                _statsPanel.Controls.RemoveAt(0);
+                ctrl.Dispose();
+            }
             
             var totalPackages = _allPackages.Count;
             var outdatedPackages = _allPackages.Count(p => p.IsOutdated);
@@ -1028,7 +1185,9 @@ namespace OPTools.Forms
             {
                 // Hide "Update Package" for local projects as we enforce Project-level updates
                 // Global packages still allow individual updates
-                bool isGlobal = _currentProjectFilter == "__GLOBAL__";
+                bool isGlobal = _currentProjectFilter == "__GLOBAL__" || 
+                                _currentProjectFilter == "__GLOBAL_BUN__" || 
+                                _currentProjectFilter == "__GLOBAL_PYTHON__";
                 
                 foreach (ToolStripItem item in _contextMenu.Items)
                 {
@@ -1076,7 +1235,7 @@ namespace OPTools.Forms
             }
             
             // Sort by column
-            IOrderedEnumerable<NpmPackage> sorted = _sortColumn switch
+            IOrderedEnumerable<PackageInfo> sorted = _sortColumn switch
             {
                 0 => _sortAscending ? _filteredPackages.OrderBy(p => p.Name) : _filteredPackages.OrderByDescending(p => p.Name),
                 1 => _sortAscending ? _filteredPackages.OrderBy(p => p.Version) : _filteredPackages.OrderByDescending(p => p.Version),
@@ -1246,12 +1405,12 @@ namespace OPTools.Forms
             }
         }
 
-        private List<NpmPackage> GetSelectedPackages()
+        private List<PackageInfo> GetSelectedPackages()
         {
-            var packages = new List<NpmPackage>();
+            var packages = new List<PackageInfo>();
             foreach (ListViewItem item in _packageListView.SelectedItems)
             {
-                if (item.Tag is NpmPackage package)
+                if (item.Tag is PackageInfo package)
                 {
                     packages.Add(package);
                 }
@@ -1323,32 +1482,59 @@ namespace OPTools.Forms
         private async Task ScanGlobalPackagesAsync()
         {
             SetLoading(true);
-            UpdateStatus("Scanning global npm packages...");
+            UpdateStatus("Scanning global packages...");
             
             try
             {
                 var progress = new Progress<string>(msg => UpdateStatus(msg));
-                var packages = await _scanner!.ScanGlobalPackagesAsync(progress);
                 
-                // Create/update global project
-                var globalProject = new NpmProject
+                // Scan NPM
+                var npmPackages = await _scanner!.ScanGlobalPackagesAsync(progress);
+                var globalProject = new ProjectInfo
                 {
-                    Name = "Global Packages",
+                    Name = "Global NPM Packages",
                     Path = "__GLOBAL__",
                     LastScanned = DateTime.Now,
-                    PackageCount = packages.Count,
+                    PackageCount = npmPackages.Count,
                     CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
+                    UpdatedAt = DateTime.Now,
+                    Ecosystem = Ecosystem.NPM
                 };
                 _database?.UpsertProject(globalProject);
+                foreach (var package in npmPackages) _database?.UpsertPackage(package);
                 
-                foreach (var package in packages)
+                // Scan Bun
+                var bunPackages = await _scanner!.ScanGlobalBunPackagesAsync(progress);
+                var bunProject = new ProjectInfo
                 {
-                    _database?.UpsertPackage(package);
-                }
+                    Name = "Global Bun Packages",
+                    Path = "__GLOBAL_BUN__",
+                    LastScanned = DateTime.Now,
+                    PackageCount = bunPackages.Count,
+                    CreatedAt = DateTime.Now,
+                    UpdatedAt = DateTime.Now,
+                    Ecosystem = Ecosystem.Bun
+                };
+                _database?.UpsertProject(bunProject);
+                foreach (var package in bunPackages) _database?.UpsertPackage(package);
+                
+                // Scan Python (Pip)
+                var pipPackages = await _scanner!.ScanGlobalPipPackagesAsync(progress);
+                var pipProject = new ProjectInfo
+                {
+                    Name = "Global Python Packages",
+                    Path = "__GLOBAL_PYTHON__",
+                    LastScanned = DateTime.Now,
+                    PackageCount = pipPackages.Count,
+                    CreatedAt = DateTime.Now,
+                    UpdatedAt = DateTime.Now,
+                    Ecosystem = Ecosystem.Python
+                };
+                _database?.UpsertProject(pipProject);
+                foreach (var package in pipPackages) _database?.UpsertPackage(package);
                 
                 LoadData();
-                UpdateStatus($"Scan complete: Found {packages.Count} global packages");
+                UpdateStatus($"Scan complete: Found {npmPackages.Count} npm, {bunPackages.Count} bun, {pipPackages.Count} pip packages");
             }
             catch (Exception ex)
             {
@@ -1504,10 +1690,10 @@ namespace OPTools.Forms
         {
             using var dialog = new SaveFileDialog
             {
-                Title = "Export NPM Package Data",
+                Title = "Export Package Data",
                 Filter = "JSON Files (*.json)|*.json|CSV Files (*.csv)|*.csv",
                 DefaultExt = "json",
-                FileName = $"npm-packages-export-{DateTime.Now:yyyy-MM-dd}"
+                FileName = $"packages-export-{DateTime.Now:yyyy-MM-dd}"
             };
             
             if (dialog.ShowDialog() != DialogResult.OK)
@@ -1541,37 +1727,11 @@ namespace OPTools.Forms
         
         private string ExportToJson()
         {
-            var exportData = new
+            var exportData = new PackageExportData
             {
-                packages = _allPackages.Select(p => new
-                {
-                    name = p.Name,
-                    version = p.Version,
-                    latestVersion = p.LatestVersion,
-                    projectPath = p.ProjectPath,
-                    path = p.Path,
-                    isOutdated = p.IsOutdated,
-                    notFound = p.NotFound,
-                    lastChecked = p.LastChecked?.ToString("o"),
-                    description = p.Description,
-                    author = p.Author,
-                    license = p.License,
-                    homepage = p.Homepage,
-                    repository = p.Repository,
-                    isDev = p.IsDev,
-                    createdAt = p.CreatedAt.ToString("o"),
-                    updatedAt = p.UpdatedAt.ToString("o")
-                }),
-                projects = _allProjects.Select(p => new
-                {
-                    name = p.Name,
-                    path = p.Path,
-                    lastScanned = p.LastScanned?.ToString("o"),
-                    packageCount = p.PackageCount,
-                    createdAt = p.CreatedAt.ToString("o"),
-                    updatedAt = p.UpdatedAt.ToString("o")
-                }),
-                exportDate = DateTime.Now.ToString("o")
+                Packages = _allPackages,
+                Projects = _allProjects,
+                ExportDate = DateTime.Now
             };
             
             return JsonConvert.SerializeObject(exportData, Formatting.Indented);
@@ -1649,14 +1809,14 @@ namespace OPTools.Forms
 
         private string GetGlobalNodeModulesPath()
         {
-            // Simplified for brevity
-            return Environment.ExpandEnvironmentVariables("%APPDATA%\\npm\\node_modules");
+            // Best effort guess for Windows
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", "node_modules");
         }
 
         private void ListView_DrawColumnHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
         {
             e.Graphics.FillRectangle(new SolidBrush(_cGridHeader), e.Bounds);
-            TextRenderer.DrawText(e.Graphics, e.Header.Text, _packageListView.Font, e.Bounds, _cTextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+            TextRenderer.DrawText(e.Graphics, e.Header?.Text ?? string.Empty, _packageListView.Font, e.Bounds, _cTextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
         }
 
         private void ListView_DrawItem(object? sender, DrawListViewItemEventArgs e)

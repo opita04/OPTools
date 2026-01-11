@@ -1,0 +1,27 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="appsGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#37474f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#263238;stop-opacity:1" />
+    </linearGradient>
+    <filter id="orangeGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- App Grid -->
+  <rect x="8" y="8" width="22" height="22" rx="4" ry="4" fill="url(#appsGrad)" stroke="#546e7a" stroke-width="2"/>
+  <rect x="34" y="8" width="22" height="22" rx="4" ry="4" fill="url(#appsGrad)" stroke="#546e7a" stroke-width="2"/>
+  <rect x="8" y="34" width="22" height="22" rx="4" ry="4" fill="url(#appsGrad)" stroke="#546e7a" stroke-width="2"/>
+  <rect x="34" y="34" width="22" height="22" rx="4" ry="4" fill="url(#appsGrad)" stroke="#546e7a" stroke-width="2"/>
+  
+  <!-- App Icons -->
+  <circle cx="19" cy="19" r="6" fill="#ff9800" filter="url(#orangeGlow)"/>
+  <rect x="40" y="13" width="10" height="12" rx="2" fill="#ff9800" filter="url(#orangeGlow)"/>
+  <path d="M14 42 L19 52 L24 42 Z" fill="#ff9800" filter="url(#orangeGlow)"/>
+  <circle cx="45" cy="45" r="6" fill="#ff9800" filter="url(#orangeGlow)"/>
+</svg>

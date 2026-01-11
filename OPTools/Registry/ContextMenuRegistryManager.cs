@@ -383,8 +383,8 @@ public class ContextMenuRegistryManager
     /// Extracts the executable path from a full command string.
     /// Handles both quoted paths and unquoted paths with arguments.
     /// Examples:
-    /// - "C:\Windows\System32\cmd.exe /k pushd \"%1\"" -> "C:\Windows\System32\cmd.exe"
-    /// - "\"C:\Program Files\app.exe\" \"%1\"" -> "C:\Program Files\app.exe"
+    /// - "C:\Windows\System32\cmd.exe /k pushd "%1"" -> "C:\Windows\System32\cmd.exe"
+    /// - "\"C:\Program Files\app.exe\" "%1"" -> "C:\Program Files\app.exe"
     /// </summary>
     private string ExtractExecutablePath(string command)
     {
@@ -405,14 +405,37 @@ public class ContextMenuRegistryManager
             return trimmed.Substring(1);
         }
         
-        // No leading quote - split on first space (if any)
-        int spaceIndex = trimmed.IndexOf(' ');
-        if (spaceIndex > 0)
+        // No leading quote - check if it's a valid file path as-is first
+        if (File.Exists(trimmed))
         {
-            return trimmed.Substring(0, spaceIndex);
+            return trimmed;
+        }
+
+        // Try to split by space, but only if the first part is an executable
+        // This is heuristic: if "C:\Program Files\App.exe /arg" is passed without quotes,
+        // we might split at "Program". 
+        // We will try to find the longest substring that is a valid file.
+        
+        // Split by space
+        string[] parts = trimmed.Split(' ');
+        string currentPath = parts[0];
+        
+        // If the first part exists, return it
+        if (File.Exists(currentPath)) return currentPath;
+
+        // Otherwise, incrementally add parts and check if file exists
+        for (int i = 1; i < parts.Length; i++)
+        {
+            currentPath += " " + parts[i];
+            if (File.Exists(currentPath))
+            {
+                return currentPath;
+            }
         }
         
-        // No spaces, return the whole string
+        // If no valid file found, fallback to just returning the trimmed string or first part
+        // We return the whole string as fallback assuming it might be a valid command (like just "cmd")
+        // though we check for file existence usually.
         return trimmed;
     }
     

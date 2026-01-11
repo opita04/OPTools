@@ -8,14 +8,14 @@ using Newtonsoft.Json.Linq;
 namespace OPTools.Core
 {
     /// <summary>
-    /// Handles checking for updates and updating npm packages
+    /// Handles checking for updates and updating packages across multiple ecosystems
     /// </summary>
-    public class NpmUpdater : IDisposable
+    public class PackageUpdater : IDisposable
     {
         private readonly HttpClient _httpClient;
         private bool _disposed;
 
-        public NpmUpdater()
+        public PackageUpdater()
         {
             _httpClient = new HttpClient
             {
@@ -58,41 +58,51 @@ namespace OPTools.Core
         }
 
         /// <summary>
-        /// Checks multiple packages for updates
+        /// Checks multiple packages for updates in parallel
         /// </summary>
-        public async Task<List<(NpmPackage package, string? latestVersion, bool isOutdated, bool notFound)>> CheckForUpdatesAsync(
-            IEnumerable<NpmPackage> packages, 
+        public async Task<List<(PackageInfo package, string? latestVersion, bool isOutdated, bool notFound)>> CheckForUpdatesAsync(
+            IEnumerable<PackageInfo> packages, 
             IProgress<(int current, int total, string packageName)>? progress = null)
         {
-            var results = new List<(NpmPackage package, string? latestVersion, bool isOutdated, bool notFound)>();
-            var packageList = new List<NpmPackage>(packages);
+            var results = new System.Collections.Concurrent.ConcurrentBag<(PackageInfo, string?, bool, bool)>();
+            var packageList = new List<PackageInfo>(packages);
             var total = packageList.Count;
-            var current = 0;
+            int current = 0;
             
-            foreach (var package in packageList)
+            // Limit concurrency to avoid overwhelming the registry or network
+            using var semaphore = new System.Threading.SemaphoreSlim(10);
+            
+            var tasks = packageList.Select(async package =>
             {
-                current++;
-                progress?.Report((current, total, package.Name));
-                
-                var (latestVersion, notFound) = await GetLatestVersionAsync(package.Name);
-                var isOutdated = !notFound && !string.IsNullOrEmpty(latestVersion) && 
-                                 CompareVersions(package.Version, latestVersion) < 0;
-                
-                results.Add((package, latestVersion, isOutdated, notFound));
-                
-                // Small delay to avoid hammering the registry
-                await Task.Delay(50);
-            }
+                await semaphore.WaitAsync();
+                try
+                {
+                    var (latestVersion, notFound) = await GetLatestVersionAsync(package.Name);
+                    var isOutdated = !notFound && !string.IsNullOrEmpty(latestVersion) && 
+                                     CompareVersions(package.Version, latestVersion) < 0;
+                    
+                    results.Add((package, latestVersion, isOutdated, notFound));
+                    
+                    var newCount = System.Threading.Interlocked.Increment(ref current);
+                    progress?.Report((newCount, total, package.Name));
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
             
-            return results;
+            await Task.WhenAll(tasks);
+            
+            return results.ToList();
         }
 
         /// <summary>
         /// Updates a package to a specific version
         /// </summary>
-        public async Task<NpmUpdateResult> UpdatePackageAsync(NpmPackage package, string? targetVersion = null)
+        public async Task<PackageUpdateResult> UpdatePackageAsync(PackageInfo package, string? targetVersion = null)
         {
-            var result = new NpmUpdateResult
+            var result = new PackageUpdateResult
             {
                 PackageName = package.Name,
                 OldVersion = package.Version
@@ -101,13 +111,33 @@ namespace OPTools.Core
             try
             {
                 var version = targetVersion ?? package.LatestVersion ?? "latest";
-                var isGlobal = package.ProjectPath == "__GLOBAL__";
+                string command;
+                string? workingDir = package.ProjectPath;
                 
-                var command = isGlobal
-                    ? $"npm install -g {package.Name}@{version}"
-                    : $"npm install {package.Name}@{version}";
-                
-                var workingDir = isGlobal ? null : package.ProjectPath;
+                if (package.ProjectPath == "__GLOBAL__")
+                {
+                     command = $"npm install -g {package.Name}@{version}";
+                     workingDir = null;
+                }
+                else if (package.ProjectPath == "__GLOBAL_BUN__")
+                {
+                     command = $"bun add -g {package.Name}@{version}";
+                     workingDir = null;
+                }
+                else if (package.ProjectPath == "__GLOBAL_PYTHON__")
+                {
+                     if (version == "latest")
+                        command = $"pip install --upgrade {package.Name}";
+                     else
+                        command = $"pip install --upgrade {package.Name}=={version}";
+                        
+                     workingDir = null;
+                }
+                else
+                {
+                    // Local project - default to npm for now
+                    command = $"npm install {package.Name}@{version}";
+                }
                 
                 var (success, output, error) = await RunNpmCommandAsync(command, workingDir);
                 
@@ -138,17 +168,32 @@ namespace OPTools.Core
         /// <summary>
         /// Uninstalls a package from a project
         /// </summary>
-        public async Task<bool> UninstallPackageAsync(NpmPackage package)
+        public async Task<bool> UninstallPackageAsync(PackageInfo package)
         {
             try
             {
-                var isGlobal = package.ProjectPath == "__GLOBAL__";
+                string command;
+                string? workingDir = package.ProjectPath;
                 
-                var command = isGlobal
-                    ? $"npm uninstall -g {package.Name}"
-                    : $"npm uninstall {package.Name}";
-                
-                var workingDir = isGlobal ? null : package.ProjectPath;
+                if (package.ProjectPath == "__GLOBAL__")
+                {
+                    command = $"npm uninstall -g {package.Name}";
+                    workingDir = null;
+                }
+                else if (package.ProjectPath == "__GLOBAL_BUN__")
+                {
+                    command = $"bun remove -g {package.Name}";
+                    workingDir = null;
+                }
+                else if (package.ProjectPath == "__GLOBAL_PYTHON__")
+                {
+                    command = $"pip uninstall -y {package.Name}";
+                    workingDir = null;
+                }
+                else
+                {
+                    command = $"npm uninstall {package.Name}";
+                }
                 
                 var (success, _, _) = await RunNpmCommandAsync(command, workingDir);
                 return success;
@@ -229,9 +274,9 @@ namespace OPTools.Core
         /// <summary>
         /// Updates all packages in a project (npm update)
         /// </summary>
-        public async Task<NpmUpdateResult> UpdateProjectAsync(string projectPath)
+        public async Task<PackageUpdateResult> UpdateProjectAsync(string projectPath)
         {
-            var result = new NpmUpdateResult
+            var result = new PackageUpdateResult
             {
                 PackageName = "Project Update",
                 OldVersion = "Current",
@@ -267,7 +312,7 @@ namespace OPTools.Core
             return result;
         }
 
-        private async Task<(bool success, string output, string error)> RunNpmCommandAsync(string command, string? workingDirectory = null)
+        private async Task<(bool success, string output, string error)> RunNpmCommandAsync(string command, string? workingDirectory = null, int timeoutSeconds = 300)
         {
             var startInfo = new ProcessStartInfo
             {
@@ -285,13 +330,36 @@ namespace OPTools.Core
             }
             
             using var process = new Process { StartInfo = startInfo };
-            process.Start();
             
-            var output = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            
-            return (process.ExitCode == 0, output, error);
+            try
+            {
+                process.Start();
+                
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+                
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
+                var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+                
+                try
+                {
+                    await process.WaitForExitAsync(cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Timeout occurred
+                    try { process.Kill(true); } catch { }
+                    return (false, "", "Operation timed out after " + timeoutSeconds + " seconds.");
+                }
+
+                var output = await stdoutTask;
+                var error = await stderrTask;
+                
+                return (process.ExitCode == 0, output, error);
+            }
+            catch (Exception ex)
+            {
+                return (false, "", $"Process error: {ex.Message}");
+            }
         }
 
         public void Dispose()

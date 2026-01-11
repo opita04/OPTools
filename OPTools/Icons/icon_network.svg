@@ -1,0 +1,29 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="networkGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#37474f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#263238;stop-opacity:1" />
+    </linearGradient>
+    <filter id="cyanGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Network Nodes -->
+  <circle cx="16" cy="48" r="8" fill="url(#networkGrad)" stroke="#546e7a" stroke-width="2"/>
+  <circle cx="48" cy="48" r="8" fill="url(#networkGrad)" stroke="#546e7a" stroke-width="2"/>
+  <circle cx="32" cy="20" r="8" fill="url(#networkGrad)" stroke="#546e7a" stroke-width="2"/>
+  
+  <!-- Network Lines -->
+  <line x1="16" y1="48" x2="32" y2="20" stroke="#00e5ff" stroke-width="3" stroke-linecap="round" filter="url(#cyanGlow)"/>
+  <line x1="48" y1="48" x2="32" y2="20" stroke="#00e5ff" stroke-width="3" stroke-linecap="round" filter="url(#cyanGlow)"/>
+  <line x1="16" y1="48" x2="48" y2="48" stroke="#00e5ff" stroke-width="3" stroke-linecap="round" filter="url(#cyanGlow)"/>
+  
+  <!-- Signal waves -->
+  <path d="M8 32 Q4 40 8 48" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" fill="none" filter="url(#cyanGlow)" opacity="0.6"/>
+  <path d="M56 32 Q60 40 56 48" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" fill="none" filter="url(#cyanGlow)" opacity="0.6"/>
+</svg>

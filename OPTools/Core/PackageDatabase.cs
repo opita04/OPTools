@@ -6,14 +6,14 @@ using Microsoft.Data.Sqlite;
 namespace OPTools.Core
 {
     /// <summary>
-    /// SQLite database for storing npm package information
+    /// SQLite database for storing package information
     /// </summary>
-    public class NpmDatabase : IDisposable
+    public class PackageDatabase : IDisposable
     {
         private readonly SqliteConnection _connection;
         private bool _disposed;
 
-        public NpmDatabase()
+        public PackageDatabase()
         {
             var appDataPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -125,7 +125,7 @@ namespace OPTools.Core
             catch { /* Column already exists */ }
         }
 
-        public void UpsertProject(NpmProject project)
+        public void UpsertProject(ProjectInfo project)
         {
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = @"
@@ -148,7 +148,7 @@ namespace OPTools.Core
             cmd.ExecuteNonQuery();
         }
 
-        public void UpsertPackage(NpmPackage package)
+        public void UpsertPackage(PackageInfo package)
         {
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = @"
@@ -186,41 +186,13 @@ namespace OPTools.Core
                     updated_at = @updatedAt
             ";
             
-            // Helper function to join lists or null
-            string? JoinList(List<string>? list) => list != null && list.Count > 0 ? string.Join(",", list) : null;
-
-            cmd.Parameters.AddWithValue("@name", package.Name);
-            cmd.Parameters.AddWithValue("@version", package.Version);
-            cmd.Parameters.AddWithValue("@path", package.Path);
-            cmd.Parameters.AddWithValue("@projectPath", package.ProjectPath);
-            cmd.Parameters.AddWithValue("@isOutdated", package.IsOutdated ? 1 : 0);
-            cmd.Parameters.AddWithValue("@latestVersion", package.LatestVersion ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@lastChecked", package.LastChecked?.ToString("o") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@notFound", package.NotFound ? 1 : 0);
-            cmd.Parameters.AddWithValue("@description", package.Description ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@author", package.Author ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@license", package.License ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@homepage", package.Homepage ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@repository", package.Repository ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@keywords", JoinList(package.Keywords) ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@size", package.Size ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@installDate", package.InstallDate?.ToString("o") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@lastPublished", package.LastPublished?.ToString("o") ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@maintainers", JoinList(package.Maintainers) ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@engines", package.Engines ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@main", package.Main ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@types", package.Types ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@dependenciesCount", package.DependenciesCount ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@devDependenciesCount", package.DevDependenciesCount ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@isDev", package.IsDev ? 1 : 0);
-            cmd.Parameters.AddWithValue("@createdAt", package.CreatedAt.ToString("o"));
-            cmd.Parameters.AddWithValue("@updatedAt", DateTime.Now.ToString("o"));
+            AddPackageParameters(cmd, package);
             cmd.ExecuteNonQuery();
         }
 
-        public List<NpmPackage> GetAllPackages()
+        public List<PackageInfo> GetAllPackages()
         {
-            var packages = new List<NpmPackage>();
+            var packages = new List<PackageInfo>();
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = "SELECT * FROM packages ORDER BY name";
             
@@ -232,9 +204,9 @@ namespace OPTools.Core
             return packages;
         }
 
-        public List<NpmPackage> GetOutdatedPackages()
+        public List<PackageInfo> GetOutdatedPackages()
         {
-            var packages = new List<NpmPackage>();
+            var packages = new List<PackageInfo>();
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = "SELECT * FROM packages WHERE is_outdated = 1 ORDER BY name";
             
@@ -246,9 +218,9 @@ namespace OPTools.Core
             return packages;
         }
 
-        public List<NpmProject> GetAllProjects()
+        public List<ProjectInfo> GetAllProjects()
         {
-            var projects = new List<NpmProject>();
+            var projects = new List<ProjectInfo>();
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = "SELECT * FROM projects ORDER BY name";
             
@@ -268,10 +240,11 @@ namespace OPTools.Core
                 {
                     "Python" => Ecosystem.Python,
                     "Cpp" => Ecosystem.Cpp,
+                    "Bun" => Ecosystem.Bun,
                     _ => Ecosystem.NPM
                 };
                 
-                projects.Add(new NpmProject
+                projects.Add(new ProjectInfo
                 {
                     Id = reader.GetInt32(0),
                     Name = reader.GetString(1),
@@ -284,6 +257,21 @@ namespace OPTools.Core
                 });
             }
             return projects;
+        }
+
+        public List<PackageInfo> GetPackagesByProject(string projectPath)
+        {
+            var packages = new List<PackageInfo>();
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "SELECT * FROM packages WHERE project_path = @projectPath ORDER BY name";
+            cmd.Parameters.AddWithValue("@projectPath", projectPath);
+            
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                packages.Add(ReadPackage(reader));
+            }
+            return packages;
         }
 
         public void UpdatePackageVersionInfo(string projectPath, string packageName, string? latestVersion, bool isOutdated, bool notFound)
@@ -395,14 +383,9 @@ namespace OPTools.Core
             cmd.ExecuteNonQuery();
         }
 
-        private NpmPackage ReadPackage(SqliteDataReader reader)
+        private PackageInfo ReadPackage(SqliteDataReader reader)
         {
-            // Helper to safe-read columns (column order assumes SELECT * and table structure)
-            // Since we added columns, direct index access is risky if we don't know exact order.
-            // Better to use column name mapping if performance allows, or strict order.
-            // For now, I'll rely on strict order and use GetOrdinal for safety.
-            
-            return new NpmPackage
+            return new PackageInfo
             {
                 Id = reader.GetInt32(reader.GetOrdinal("id")),
                 Name = reader.GetString(reader.GetOrdinal("name")),
@@ -432,6 +415,39 @@ namespace OPTools.Core
                 CreatedAt = DateTime.Parse(reader.GetString(reader.GetOrdinal("created_at"))),
                 UpdatedAt = DateTime.Parse(reader.GetString(reader.GetOrdinal("updated_at")))
             };
+        }
+
+        private void AddPackageParameters(SqliteCommand cmd, PackageInfo package)
+        {
+            // Helper function to join lists or null
+            string? JoinList(List<string>? list) => list != null && list.Count > 0 ? string.Join(",", list) : null;
+
+            cmd.Parameters.AddWithValue("@name", package.Name);
+            cmd.Parameters.AddWithValue("@version", package.Version);
+            cmd.Parameters.AddWithValue("@path", package.Path);
+            cmd.Parameters.AddWithValue("@projectPath", package.ProjectPath);
+            cmd.Parameters.AddWithValue("@isOutdated", package.IsOutdated ? 1 : 0);
+            cmd.Parameters.AddWithValue("@latestVersion", package.LatestVersion ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@lastChecked", package.LastChecked?.ToString("o") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@notFound", package.NotFound ? 1 : 0);
+            cmd.Parameters.AddWithValue("@description", package.Description ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@author", package.Author ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@license", package.License ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@homepage", package.Homepage ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@repository", package.Repository ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@keywords", JoinList(package.Keywords) ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@size", package.Size ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@installDate", package.InstallDate?.ToString("o") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@lastPublished", package.LastPublished?.ToString("o") ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@maintainers", JoinList(package.Maintainers) ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@engines", package.Engines ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@main", package.Main ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@types", package.Types ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@dependenciesCount", package.DependenciesCount ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@devDependenciesCount", package.DevDependenciesCount ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@isDev", package.IsDev ? 1 : 0);
+            cmd.Parameters.AddWithValue("@createdAt", package.CreatedAt.ToString("o"));
+            cmd.Parameters.AddWithValue("@updatedAt", DateTime.Now.ToString("o"));
         }
 
         private bool IsDbNull(SqliteDataReader reader, string columnName)

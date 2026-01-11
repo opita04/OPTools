@@ -11,6 +11,7 @@ public class ModernButton : Button
     public int BorderRadius { get; set; } = 20;
     public Color CornerBackColor { get; set; } = Color.FromArgb(30, 30, 30); // Default to App Background
     public Color HoverColor { get; set; } = Color.Empty;
+    public int ImagePadding { get; set; } = 0; // Padding around icon for smaller buttons
     
     private Color _originalBackColor;
 
@@ -59,11 +60,12 @@ public class ModernButton : Button
             graphics.FillPath(brush, path);
         }
 
-        // Draw Icon and Text
+        // Draw Icon/Image
         // Icon font: Segoe MDL2 Assets
         // Text font: Segoe UI (from property)
 
-        int iconSize = 12;
+        // Calculate icon size: if ImagePadding is set, size to fit; otherwise use 24px default
+        int iconSize = ImagePadding > 0 ? Math.Max(12, this.Width - (ImagePadding * 2)) : 24;
         int spacing = 8;
         
         // Measure text
@@ -71,22 +73,33 @@ public class ModernButton : Button
         
         // Calculate total width to center content
         float totalWidth = textSize.Width;
-        if (!string.IsNullOrEmpty(IconChar))
+        
+        if (this.Image != null)
             totalWidth += iconSize + spacing;
+        else if (!string.IsNullOrEmpty(IconChar))
+            totalWidth += 12 + spacing; // Font icon size is smaller (12)
 
         float startX = (this.Width - totalWidth) / 2;
         float centerY = this.Height / 2;
 
-        // Draw Icon
-        if (!string.IsNullOrEmpty(IconChar))
+        // Draw Image
+        if (this.Image != null)
         {
-            using (var iconFont = new Font("Segoe MDL2 Assets", iconSize))
+            float imageY = centerY - (iconSize / 2);
+            graphics.DrawImage(this.Image, new Rectangle((int)startX, (int)imageY, iconSize, iconSize));
+            startX += iconSize + spacing;
+        }
+        // Draw Font Icon
+        else if (!string.IsNullOrEmpty(IconChar))
+        {
+            int fontIconSize = 12;
+            using (var iconFont = new Font("Segoe MDL2 Assets", fontIconSize))
             using (var brush = new SolidBrush(this.ForeColor))
             {
-                float iconY = centerY - (iconSize / 2) - 1; // Slight adjustment
+                float iconY = centerY - (fontIconSize / 2) - 1; // Slight adjustment
                 graphics.DrawString(IconChar, iconFont, brush, startX, iconY);
             }
-            startX += iconSize + spacing;
+            startX += fontIconSize + spacing;
         }
 
         // Draw Text
@@ -98,6 +111,7 @@ public class ModernButton : Button
     }
 
     private GraphicsPath GetRoundedPath(Rectangle rect, int radius)
+
     {
         GraphicsPath path = new GraphicsPath();
         float r = radius;
@@ -171,11 +185,18 @@ public class SidebarButton : Button
 
         // Draw Icon and Text
         int iconX = 25;
-        int textX = 50;
+        int textX = 65; // Shifted right to accommodate larger icons
         int centerY = this.Height / 2;
 
-        // Icon
-        if (!string.IsNullOrEmpty(IconChar))
+        // Icon/Image
+        if (this.Image != null)
+        {
+            int imageSize = 24;
+            int imageY = centerY - (imageSize / 2);
+            // Draw image centered at iconX (centering 24px image in similar space)
+            graphics.DrawImage(this.Image, new Rectangle(iconX - 4, imageY, imageSize, imageSize));
+        }
+        else if (!string.IsNullOrEmpty(IconChar))
         {
             using (var iconFont = new Font("Segoe MDL2 Assets", 12))
             using (var brush = new SolidBrush(fg))
@@ -196,6 +217,7 @@ public class SidebarButton : Button
             graphics.DrawString(this.Text, fontToUse, brush, textX, textY);
         }
     }
+
 
     private GraphicsPath GetRoundedPath(Rectangle rect, int radius)
     {

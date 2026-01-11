@@ -33,57 +33,72 @@ namespace OPTools
 
         private void InitializeContextMenuPanel()
         {
-            _contextMenuContentPanel = new Panel
+            try
             {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(30),
-                BackColor = _cBackground,
-                Visible = false
-            };
+                _contextMenuContentPanel = new Panel
+                {
+                    Dock = DockStyle.Fill,
+                    Padding = new Padding(30),
+                    BackColor = _cBackground,
+                    Visible = false
+                };
 
-            // Tab Control
-            _ctxTabControl = new TabControl
-            {
-                Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI", 10),
-                Appearance = TabAppearance.FlatButtons,
-                Padding = new Point(20, 5)
-            };
-            
-            // Tab 1: Existing Entries
-            TabPage tabExisting = new TabPage("Existing Entries")
-            {
-                BackColor = _cBackground,
-                Padding = new Padding(15)
-            };
-            tabExisting.Controls.Add(CreateExistingEntriesPanel());
-            _ctxTabControl.TabPages.Add(tabExisting);
-            
-            // Tab 2: Add New Entry
-            TabPage tabAdd = new TabPage("Add New Entry")
-            {
-                BackColor = _cBackground,
-                Padding = new Padding(15)
-            };
-            tabAdd.Controls.Add(CreateAddEntryPanel());
-            _ctxTabControl.TabPages.Add(tabAdd);
-            
-            _contextMenuContentPanel.Controls.Add(_ctxTabControl);
-            
-            // Status Bar for Context Menu
-            _ctxLblStatus = new Label
-            {
-                Dock = DockStyle.Bottom,
-                Height = 30,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = _cTextDim,
-                Font = new Font("Segoe UI", 9),
-                BackColor = _cBackground,
-                Text = "Ready"
-            };
-            _contextMenuContentPanel.Controls.Add(_ctxLblStatus);
+                // Tab Control
+                _ctxTabControl = new TabControl
+                {
+                    Dock = DockStyle.Fill,
+                    Font = new Font("Segoe UI", 10),
+                    Appearance = TabAppearance.FlatButtons,
+                    Padding = new Point(20, 5)
+                };
+                
+                // Tab 1: Existing Entries
+                TabPage tabExisting = new TabPage("Existing Entries")
+                {
+                    BackColor = _cBackground,
+                    Padding = new Padding(15)
+                };
+                tabExisting.Controls.Add(CreateExistingEntriesPanel());
+                _ctxTabControl.TabPages.Add(tabExisting);
+                
+                // Tab 2: Add New Entry
+                TabPage tabAdd = new TabPage("Add New Entry")
+                {
+                    BackColor = _cBackground,
+                    Padding = new Padding(15)
+                };
+                tabAdd.Controls.Add(CreateAddEntryPanel());
+                _ctxTabControl.TabPages.Add(tabAdd);
+                
+                _contextMenuContentPanel.Controls.Add(_ctxTabControl);
+                
+                // Status Bar for Context Menu
+                _ctxLblStatus = new Label
+                {
+                    Dock = DockStyle.Bottom,
+                    Height = 30,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    ForeColor = _cTextDim,
+                    Font = new Font("Segoe UI", 9),
+                    BackColor = _cBackground,
+                    Text = "Ready"
+                };
+                _contextMenuContentPanel.Controls.Add(_ctxLblStatus);
 
-            _contentPanel.Controls.Add(_contextMenuContentPanel);
+                _contentPanel.Controls.Add(_contextMenuContentPanel);
+            }
+            catch (Exception ex)
+            {
+                // Ensure panel exists to prevent NRE in ShowView
+                if (_contextMenuContentPanel == null)
+                {
+                    _contextMenuContentPanel = new Panel { Visible = false };
+                    _contentPanel?.Controls.Add(_contextMenuContentPanel);
+                }
+
+                MessageBox.Show($"Error initializing Context Menu Manager:\n{ex.Message}\n\nStack:\n{ex.StackTrace}", 
+                    "Initialization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private Panel CreateExistingEntriesPanel()
@@ -108,6 +123,7 @@ namespace OPTools
                 Width = 120
             };
             _ctxBtnRefresh.Click += (s, e) => RefreshContextEntries();
+            _toolTip.SetToolTip(_ctxBtnRefresh, "Refresh context menu entries");
             
             _ctxBtnEdit = new ModernButton
             {
@@ -120,6 +136,7 @@ namespace OPTools
                 Enabled = false
             };
             _ctxBtnEdit.Click += CtxBtnEdit_Click;
+            _toolTip.SetToolTip(_ctxBtnEdit, "Edit selected context menu entry");
             
             _ctxBtnDelete = new ModernButton
             {
@@ -132,6 +149,7 @@ namespace OPTools
                 Enabled = false
             };
             _ctxBtnDelete.Click += CtxBtnDelete_Click;
+            _toolTip.SetToolTip(_ctxBtnDelete, "Delete selected context menu entry");
             
             headerPanel.Controls.Add(_ctxBtnRefresh);
             headerPanel.Controls.Add(_ctxBtnEdit);
@@ -219,6 +237,7 @@ namespace OPTools
                 Margin = new Padding(5, 0, 0, 0)
             };
             _ctxBtnBrowse.Click += CtxBtnBrowse_Click;
+            _toolTip.SetToolTip(_ctxBtnBrowse, "Browse for application executable");
             
             appPathPanel.Controls.Add(_ctxTxtAppPath);
             appPathPanel.Controls.Add(_ctxBtnBrowse);
@@ -311,6 +330,7 @@ namespace OPTools
                 Width = 150
             };
             _ctxBtnAdd.Click += CtxBtnAdd_Click;
+            _toolTip.SetToolTip(_ctxBtnAdd, "Add new context menu entry");
             
             panel.Controls.Add(lblAppPath);
             panel.Controls.Add(appPathPanel);
@@ -323,35 +343,55 @@ namespace OPTools
             return panel;
         }
 
-        private void RefreshContextEntries()
+        private async void RefreshContextEntries()
         {
-            _ctxListView.Items.Clear();
-            _ctxBtnDelete.Enabled = false;
+            try 
+            {
+                if (_ctxListView == null || _ctxLblStatus == null) return;
+
+                _ctxListView.Items.Clear();
+                _ctxBtnDelete.Enabled = false;
+                _ctxBtnRefresh.Enabled = false;
+                _ctxLblStatus.Text = "Loading registry entries...";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error determining context menu state: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
             
             try
             {
-                var entries = _registryManager.ListEntries();
+                var entries = await Task.Run(() => _registryManager.ListEntries());
                 
                 if (entries.Count == 0)
                 {
                     _ctxLblStatus.Text = "No custom context menu entries found";
-                    return;
                 }
-                
-                foreach (var entry in entries)
+                else
                 {
-                    ListViewItem item = new ListViewItem(entry.DisplayName);
-                    item.SubItems.Add(entry.MenuType);
-                    item.SubItems.Add(entry.Command);
-                    item.Tag = entry;
-                    _ctxListView.Items.Add(item);
+                    foreach (var entry in entries)
+                    {
+                        if (entry == null) continue;
+                        
+                        ListViewItem item = new ListViewItem(entry.DisplayName ?? "Unknown");
+                        item.SubItems.Add(entry.MenuType ?? "-");
+                        item.SubItems.Add(entry.Command ?? "-");
+                        item.Tag = entry;
+                        _ctxListView.Items.Add(item);
+                    }
+                    _ctxLblStatus.Text = $"Found {entries.Count} context menu entr{(entries.Count == 1 ? "y" : "ies")}";
                 }
-                
-                _ctxLblStatus.Text = $"Found {entries.Count} context menu entr{(entries.Count == 1 ? "y" : "ies")}";
             }
             catch (Exception ex)
             {
                 _ctxLblStatus.Text = $"Error loading entries: {ex.Message}";
+                MessageBox.Show($"Error loading entries: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                if (_ctxBtnRefresh != null)
+                    _ctxBtnRefresh.Enabled = true;
             }
         }
 
@@ -557,6 +597,7 @@ namespace OPTools
                 Location = new Point(labelWidth + 30, yPos),
                 Size = new Size(140, 38)
             };
+            _toolTip.SetToolTip(btnSave, "Save changes to context menu entry");
             
             ModernButton btnCancel = new ModernButton
             {
@@ -567,6 +608,7 @@ namespace OPTools
                 Location = new Point(labelWidth + 30 + 150, yPos),
                 Size = new Size(100, 38)
             };
+            _toolTip.SetToolTip(btnCancel, "Cancel editing");
             
             btnSave.Click += (s, ev) =>
             {

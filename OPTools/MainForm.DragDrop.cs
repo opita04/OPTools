@@ -128,7 +128,7 @@ namespace OPTools
 
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
                 
                 if (files != null && files.Length > 0)
                 {

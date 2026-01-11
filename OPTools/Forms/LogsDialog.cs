@@ -42,6 +42,7 @@ namespace OPTools.Forms
 
         private readonly List<LogEntry> _logs;
         private Panel _logsPanel = null!;
+        private ToolTip _toolTip = null!;
 
         public event EventHandler? LogsCleared;
 
@@ -54,6 +55,12 @@ namespace OPTools.Forms
 
         private void InitializeDialog()
         {
+            _toolTip = new ToolTip();
+            _toolTip.AutoPopDelay = 5000;
+            _toolTip.InitialDelay = 1000;
+            _toolTip.ReshowDelay = 500;
+            _toolTip.ShowAlways = true;
+
             this.Text = $"Application Logs ({_logs.Count} entries)";
             this.Size = new Size(800, 600);
             this.StartPosition = FormStartPosition.CenterParent;
@@ -104,6 +111,7 @@ namespace OPTools.Forms
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
             btnCopyAll.Click += BtnCopyAll_Click;
+            _toolTip.SetToolTip(btnCopyAll, "Copy all logs to clipboard");
             headerPanel.Controls.Add(btnCopyAll);
 
             var btnClear = new Button
@@ -118,6 +126,7 @@ namespace OPTools.Forms
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
             btnClear.Click += BtnClear_Click;
+            _toolTip.SetToolTip(btnClear, "Clear all logs");
             headerPanel.Controls.Add(btnClear);
 
             this.Controls.Add(headerPanel);
@@ -152,6 +161,7 @@ namespace OPTools.Forms
                 Anchor = AnchorStyles.Right | AnchorStyles.Top
             };
             btnClose.Click += (s, e) => this.Close();
+            _toolTip.SetToolTip(btnClose, "Close this dialog");
             footerPanel.Controls.Add(btnClose);
 
             this.Controls.Add(footerPanel);

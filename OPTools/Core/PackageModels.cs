@@ -10,13 +10,14 @@ namespace OPTools.Core
     {
         NPM,
         Python,
-        Cpp
+        Cpp,
+        Bun
     }
 
     /// <summary>
-    /// Represents an npm package discovered in a project
+    /// Represents an package discovered in a project
     /// </summary>
-    public class NpmPackage
+    public class PackageInfo
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
@@ -47,8 +48,15 @@ namespace OPTools.Core
         public int? DependenciesCount { get; set; }
         public int? DevDependenciesCount { get; set; }
         public bool IsDev { get; set; }
+        public Ecosystem Ecosystem { get; set; } = Ecosystem.NPM;
         
-        public string DisplayProjectPath => ProjectPath == "__GLOBAL__" ? "Global" : ProjectPath;
+        public string DisplayProjectPath => ProjectPath switch
+        {
+            "__GLOBAL__" => "Global NPM",
+            "__GLOBAL_BUN__" => "Global Bun",
+            "__GLOBAL_PYTHON__" => "Global Python",
+            _ => ProjectPath
+        };
         
         public string StatusText
         {
@@ -68,9 +76,9 @@ namespace OPTools.Core
     }
 
     /// <summary>
-    /// Represents a project containing npm packages
+    /// Represents a project containing packages
     /// </summary>
-    public class NpmProject
+    public class ProjectInfo
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
@@ -81,26 +89,32 @@ namespace OPTools.Core
         public DateTime UpdatedAt { get; set; }
         public Ecosystem Ecosystem { get; set; } = Ecosystem.NPM;
         
-        public string DisplayName => Path == "__GLOBAL__" ? "Global Packages" : Name;
+        public string DisplayName => Path switch
+        {
+            "__GLOBAL__" => "Global NPM Packages",
+            "__GLOBAL_BUN__" => "Global Bun Packages",
+            "__GLOBAL_PYTHON__" => "Global Python Packages",
+            _ => Name
+        };
     }
 
     /// <summary>
-    /// Results from scanning a directory for npm packages
+    /// Results from scanning a directory for packages
     /// </summary>
-    public class NpmScanResult
+    public class PackageScanResult
     {
         public int PackagesFound { get; set; }
         public int NewPackages { get; set; }
         public int UpdatedPackages { get; set; }
         public TimeSpan ScanDuration { get; set; }
-        public List<NpmPackage> Packages { get; set; } = new();
-        public List<NpmProject> Projects { get; set; } = new();
+        public List<PackageInfo> Packages { get; set; } = new();
+        public List<ProjectInfo> Projects { get; set; } = new();
     }
 
     /// <summary>
     /// Result from updating a single package
     /// </summary>
-    public class NpmUpdateResult
+    public class PackageUpdateResult
     {
         public string PackageName { get; set; } = string.Empty;
         public string OldVersion { get; set; } = string.Empty;
@@ -113,7 +127,7 @@ namespace OPTools.Core
     /// <summary>
     /// Filter options for the package list
     /// </summary>
-    public class NpmFilterOptions
+    public class PackageFilterOptions
     {
         public string SearchTerm { get; set; } = string.Empty;
         public bool ShowOutdatedOnly { get; set; }
@@ -123,10 +137,10 @@ namespace OPTools.Core
     /// <summary>
     /// Data for export functionality
     /// </summary>
-    public class NpmExportData
+    public class PackageExportData
     {
-        public List<NpmPackage> Packages { get; set; } = new();
-        public List<NpmProject> Projects { get; set; } = new();
+        public List<PackageInfo> Packages { get; set; } = new();
+        public List<ProjectInfo> Projects { get; set; } = new();
         public DateTime ExportDate { get; set; } = DateTime.Now;
     }
 }

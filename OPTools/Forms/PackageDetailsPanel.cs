@@ -21,13 +21,13 @@ namespace OPTools.Forms
         private readonly Color _cSuccess = Color.FromArgb(92, 184, 92);
         private readonly Color _cBorder = Color.FromArgb(60, 60, 60);
 
-        private NpmPackage? _currentPackage;
+        private PackageInfo? _currentPackage;
         private Panel _contentPanel = null!;
         private ToolTip _toolTip = null!;
         
         public event EventHandler? CloseRequested;
-        public event EventHandler<NpmPackage>? UpdateRequested;
-        public event EventHandler<NpmPackage>? UninstallRequested;
+        public event EventHandler<PackageInfo>? UpdateRequested;
+        public event EventHandler<PackageInfo>? UninstallRequested;
 
         public PackageDetailsPanel()
         {
@@ -68,7 +68,7 @@ namespace OPTools.Forms
             this.Controls.Add(_contentPanel);
         }
 
-        public void ShowPackage(NpmPackage package)
+        public void ShowPackage(PackageInfo package)
         {
             _currentPackage = package;
             BuildContent();
@@ -83,7 +83,13 @@ namespace OPTools.Forms
 
         private void BuildContent()
         {
+            // Dispose old controls to prevent memory leaks
+            foreach (Control c in _contentPanel.Controls)
+            {
+                c.Dispose();
+            }
             _contentPanel.Controls.Clear();
+            
             if (_currentPackage == null) return;
 
             var pkg = _currentPackage;
