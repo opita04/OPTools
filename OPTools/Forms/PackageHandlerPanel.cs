@@ -188,9 +188,11 @@ namespace OPTools.Forms
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(0, 100), // Ensure space for 2 rows of buttons
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = true,
-                BackColor = _cBackground
+                BackColor = _cBackground,
+                Padding = new Padding(0, 0, 0, 10)
             };
 
             _btnScanDirectory = CreateActionButton("Scan Directory", "\uE8B7", _cAccent, "Scan current directory for package.json");
@@ -481,8 +483,57 @@ namespace OPTools.Forms
                 var result = await _updater!.UpdatePackageAsync(package);
                 if (result.Success)
                 {
-                    UpdateStatus($"Updated {package.Name} to {result.NewVersion}");
+                    UpdateStatus($"Updated {package.Name} to {result.NewVersion}. Verifying...");
                     AddLog(LogLevel.Info, $"Updated {package.Name}", $"From {result.OldVersion} to {result.NewVersion}");
+
+                    // Fix: Re-scan to verify changes on disk and maintain DB consistency
+                    if (package.ProjectPath.StartsWith("__GLOBAL__"))
+                    {
+                        // Re-scan global packages to confirm update
+                        // This method handles DB upsert and LoadData internally
+                        await ScanGlobalPackagesAsync();
+                        return; // Exit early since ScanGlobalPackagesAsync calls LoadData
+                    }
+                    else
+                    {
+                        // Local Project: Re-scan specific project to get actual installed version
+                        try 
+                        {
+                            var scanResult = await _scanner!.ScanSingleProjectAsync(package.ProjectPath, null);
+                            
+                            if (scanResult.Packages.Count > 0)
+                            {
+                                // Update DB with verified metadata from disk
+                                foreach (var pkg in scanResult.Packages)
+                                {
+                                    _database?.UpsertPackage(pkg);
+                                }
+                                
+                                // Update project stats (e.g. package counts)
+                                foreach (var proj in scanResult.Projects)
+                                {
+                                    _database?.UpsertProject(proj);
+                                }
+                            }
+                            else
+                            {
+                                // Fallback: If scan didn't find anything (weird), at least update version in DB
+                                if (!string.IsNullOrEmpty(result.NewVersion))
+                                {
+                                    _database?.MarkPackageAsUpdated(package.ProjectPath, package.Name, result.NewVersion);
+                                }
+                            }
+                        }
+                        catch (Exception scanEx)
+                        {
+                            AddLog(LogLevel.Warning, "Verification Scan Failed", scanEx.Message);
+                            // Fallback to simple DB update
+                            if (!string.IsNullOrEmpty(result.NewVersion))
+                            {
+                                _database?.MarkPackageAsUpdated(package.ProjectPath, package.Name, result.NewVersion);
+                            }
+                        }
+                    }
                 }
                 else
                 {
@@ -494,6 +545,7 @@ namespace OPTools.Forms
             catch (Exception ex)
             {
                 AddLog(LogLevel.Error, $"Error updating {package.Name}", ex.Message);
+                LoadData(); // Ensure UI state is consistent even on error
             }
             finally
             {
@@ -626,9 +678,9 @@ namespace OPTools.Forms
                 IconChar = icon,
                 Image = image,
                 BackColor = bgColor,
-                Width = 140,
+                Width = 130,
                 Height = 40,
-                Margin = new Padding(0, 0, 10, 0)
+                Margin = new Padding(0, 0, 12, 5)
             };
             if (!string.IsNullOrEmpty(tooltipText))
             {
@@ -1165,17 +1217,41 @@ namespace OPTools.Forms
 
         private void BtnClearAll_Click(object? sender, EventArgs e)
         {
-            var result = MessageBox.Show(
-                "Are you sure you want to clear ALL data?\n\nThis will remove all tracked projects and packages from the database. This action cannot be undone.",
-                "Confirm Clear All Data",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning);
-            
-            if (result == DialogResult.Yes)
+            // If inside a specific project/global view, only clear that project
+            if (_currentView == ViewMode.Packages && _currentProjectFilter != null)
             {
-                _database?.ClearAllData();
-                LoadData();
-                UpdateStatus("All data cleared. Use 'Scan Directory' to add projects.");
+                var project = _allProjects.FirstOrDefault(p => p.Path == _currentProjectFilter);
+                var projectName = project?.DisplayName ?? _currentProjectFilter;
+                
+                var result = MessageBox.Show(
+                    $"Are you sure you want to clear data for '{projectName}'?\n\nThis will remove this project and all its packages from the database. This action cannot be undone.",
+                    "Confirm Clear Project Data",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                
+                if (result == DialogResult.Yes)
+                {
+                    _database?.DeleteProject(_currentProjectFilter);
+                    SwitchToProjects();
+                    LoadData();
+                    UpdateStatus($"Cleared data for '{projectName}'. Use 'Scan' to re-add.");
+                }
+            }
+            else
+            {
+                // Default: clear all data
+                var result = MessageBox.Show(
+                    "Are you sure you want to clear ALL data?\n\nThis will remove all tracked projects and packages from the database. This action cannot be undone.",
+                    "Confirm Clear All Data",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                
+                if (result == DialogResult.Yes)
+                {
+                    _database?.ClearAllData();
+                    LoadData();
+                    UpdateStatus("All data cleared. Use 'Scan Directory' to add projects.");
+                }
             }
         }
 
@@ -1549,13 +1625,26 @@ namespace OPTools.Forms
         private async Task CheckForUpdatesAsync()
         {
             SetLoading(true);
-            UpdateStatus("Checking for updates...");
+            
+            // Determine which packages to check based on current view
+            var packagesToCheck = _allPackages;
+            string scopeLabel = "all packages";
+            
+            if (_currentView == ViewMode.Packages && _currentProjectFilter != null)
+            {
+                // Filter to only packages in the current project/global view
+                packagesToCheck = _allPackages.Where(p => p.ProjectPath == _currentProjectFilter).ToList();
+                var project = _allProjects.FirstOrDefault(p => p.Path == _currentProjectFilter);
+                scopeLabel = project?.DisplayName ?? _currentProjectFilter;
+            }
+            
+            UpdateStatus($"Checking for updates in {scopeLabel}...");
             
             try
             {
                 var progress = new Progress<(int current, int total, string packageName)>(val => 
                     UpdateStatus($"Checking updates: {val.packageName} ({val.current}/{val.total})"));
-                var updates = await _updater!.CheckForUpdatesAsync(_allPackages, progress);
+                var updates = await _updater!.CheckForUpdatesAsync(packagesToCheck, progress);
                 
                 // Persist results to database (matching NPM Handler's behavior)
                 int outdatedCount = 0;
@@ -1575,15 +1664,15 @@ namespace OPTools.Forms
                 
                 if (outdatedCount > 0)
                 {
-                    UpdateStatus($"Update check complete: {outdatedCount} outdated packages found");
+                    UpdateStatus($"Update check complete: {outdatedCount} outdated packages found in {scopeLabel}");
                 }
                 else
                 {
-                    UpdateStatus("Update check complete: All packages are up to date");
+                    UpdateStatus($"Update check complete: All packages in {scopeLabel} are up to date");
                 }
                 
                 AddLog(LogLevel.Info, "Update check complete", 
-                    $"Checked {updates.Count} packages, {outdatedCount} outdated");
+                    $"Checked {updates.Count} packages in {scopeLabel}, {outdatedCount} outdated");
             }
             catch (Exception ex)
             {

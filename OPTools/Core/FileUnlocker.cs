@@ -20,11 +20,44 @@ public class FileUnlocker
 {
     private readonly string _targetPath;
     private readonly HandleEnumerator _enumerator;
+    private static readonly HashSet<string> ReservedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
 
     public FileUnlocker(string targetPath)
     {
         _targetPath = PathHelper.NormalizePath(targetPath);
         _enumerator = new HandleEnumerator(_targetPath);
+    }
+
+    private static bool IsReservedFileName(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName))
+            return false;
+
+        string nameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
+        return ReservedNames.Contains(nameWithoutExtension);
+    }
+
+    private static bool DeleteReservedFile(string filePath)
+    {
+        try
+        {
+            // Use extended-length path prefix to bypass Win32 reserved name parsing
+            string extendedPath = @"\\?\" + Path.GetFullPath(filePath);
+            File.SetAttributes(extendedPath, FileAttributes.Normal);
+            File.Delete(extendedPath);
+            System.Diagnostics.Debug.WriteLine($"Deleted reserved file: {filePath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to delete reserved file {filePath}: {ex.Message}");
+            return false;
+        }
     }
 
     public UnlockResult UnlockAll(bool killProcesses = false)
@@ -169,8 +202,16 @@ public class FileUnlocker
         {
             if (File.Exists(_targetPath))
             {
-                File.SetAttributes(_targetPath, FileAttributes.Normal);
-                File.Delete(_targetPath);
+                // Check if it's a reserved filename and use special deletion method
+                if (IsReservedFileName(Path.GetFileName(_targetPath)))
+                {
+                    DeleteReservedFile(_targetPath);
+                }
+                else
+                {
+                    File.SetAttributes(_targetPath, FileAttributes.Normal);
+                    File.Delete(_targetPath);
+                }
                 AuditLogger.LogDelete(_targetPath, true);
             }
             else if (Directory.Exists(_targetPath))
@@ -182,7 +223,7 @@ public class FileUnlocker
         catch (Exception ex)
         {
             string errorMsg = $"Failed to delete: {ex.Message}";
-            
+
             try
             {
                 var currentLocks = _enumerator.EnumerateLocks();
@@ -288,22 +329,43 @@ public class FileUnlocker
         {
             DirectoryInfo directory = new DirectoryInfo(directoryPath);
 
+            // Priority: Delete reserved files first (NUL, CON, PRN, etc.)
+            // These files cannot be deleted using standard Win32 APIs
+            foreach (FileInfo file in directory.GetFiles())
+            {
+                if (IsReservedFileName(file.Name))
+                {
+                    DeleteReservedFile(file.FullName);
+                }
+            }
+
+            // Delete remaining normal files
             foreach (FileInfo file in directory.GetFiles())
             {
                 file.Attributes = FileAttributes.Normal;
                 file.Delete();
             }
 
+            // Recursively delete subdirectories
             foreach (DirectoryInfo subDirectory in directory.GetDirectories())
             {
                 DeleteDirectoryRecursive(subDirectory.FullName);
             }
 
+            // Finally delete the directory itself
             directory.Attributes = FileAttributes.Normal;
             Directory.Delete(directoryPath);
+
+            // Verify deletion succeeded
+            if (Directory.Exists(directoryPath))
+            {
+                throw new IOException($"Directory still exists after deletion attempt: {directoryPath}");
+            }
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"First attempt failed: {ex.Message}");
+
             try
             {
                 UnlockResult result = UnlockAll(true);
@@ -311,12 +373,60 @@ public class FileUnlocker
 
                 DirectoryInfo directory = new DirectoryInfo(directoryPath);
                 directory.Attributes = FileAttributes.Normal;
+
+                // Use Delete with recursive flag to clean up any remaining items
                 Directory.Delete(directoryPath, true);
+
+                // Verify deletion succeeded
+                if (Directory.Exists(directoryPath))
+                {
+                    throw new IOException($"Directory still exists after force deletion attempt: {directoryPath}");
+                }
             }
-            catch
+            catch (Exception innerEx)
             {
+                System.Diagnostics.Debug.WriteLine($"Force deletion failed: {innerEx.Message}");
+
+                // Check what's remaining and provide helpful error message
+                string remainingItems = GetRemainingItems(directoryPath);
+                string errorMsg = $"Failed to delete directory: {directoryPath}";
+
+                if (!string.IsNullOrEmpty(remainingItems))
+                {
+                    errorMsg += $"\n\nRemaining items:\n{remainingItems}";
+                }
+
+                throw new IOException(errorMsg, innerEx);
             }
         }
+    }
+
+    private string GetRemainingItems(string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+            return string.Empty;
+
+        var remaining = new List<string>();
+        DirectoryInfo directory = new DirectoryInfo(directoryPath);
+
+        try
+        {
+            foreach (FileInfo file in directory.GetFiles())
+            {
+                remaining.Add($"File: {file.Name} ({file.Length} bytes)");
+            }
+
+            foreach (DirectoryInfo dir in directory.GetDirectories())
+            {
+                remaining.Add($"Directory: {dir.Name}");
+            }
+        }
+        catch
+        {
+            remaining.Add("(Unable to enumerate remaining items)");
+        }
+
+        return string.Join("\n", remaining);
     }
 
     public bool ScheduleDeleteOnReboot()
