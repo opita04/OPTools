@@ -47,5 +47,13 @@
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
   </ItemGroup>
 
+  <Target Name="CreateSettingsShortcut" AfterTargets="PostBuildEvent" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <PowerShellExe Condition="'$(OS)' != 'Windows_NT'">pwsh</PowerShellExe>
+      <PowerShellExe Condition="'$(OS)' == 'Windows_NT'">powershell.exe</PowerShellExe>
+    </PropertyGroup>
+    <Exec Command="$(PowerShellExe) -ExecutionPolicy Bypass -File &quot;$(ProjectDir)create-shortcut.ps1&quot; -OutputPath &quot;$(TargetDir.TrimEnd('\'))&quot;" IgnoreExitCode="true" />
+  </Target>
+
 </Project>
 

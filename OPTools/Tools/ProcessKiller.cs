@@ -28,6 +28,11 @@ public static class ProcessKiller
         return await KillProcessesByName("wslrelay");
     }
 
+    public static async Task<KillResult> KillBun()
+    {
+        return await KillProcessesByName("bun");
+    }
+
     public static async Task<KillResult> KillAllDevTools()
     {
         KillResult result = new KillResult();
@@ -36,13 +41,16 @@ public static class ProcessKiller
         var bashResult = await KillProcessesByName("bash");
         var gitResult = await KillProcessesByName("git");
         var wslResult = await KillProcessesByName("wslrelay");
+        var bunResult = await KillProcessesByName("bun");
 
         result.ProcessesKilled = nodeResult.ProcessesKilled + bashResult.ProcessesKilled + 
-                                  gitResult.ProcessesKilled + wslResult.ProcessesKilled;
+                                  gitResult.ProcessesKilled + wslResult.ProcessesKilled +
+                                  bunResult.ProcessesKilled;
         result.Errors.AddRange(nodeResult.Errors);
         result.Errors.AddRange(bashResult.Errors);
         result.Errors.AddRange(gitResult.Errors);
         result.Errors.AddRange(wslResult.Errors);
+        result.Errors.AddRange(bunResult.Errors);
         result.Success = result.Errors.Count == 0;
 
         return result;

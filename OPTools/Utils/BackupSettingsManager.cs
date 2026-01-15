@@ -35,11 +35,32 @@ public static class BackupSettingsManager
                 return new List<BackupJob>();
 
             var json = File.ReadAllText(SettingsFile);
-            return JsonSerializer.Deserialize<List<BackupJob>>(json, JsonOptions) ?? new List<BackupJob>();
+            var jobs = JsonSerializer.Deserialize<List<BackupJob>>(json, JsonOptions);
+
+            if (jobs == null)
+            {
+                System.Diagnostics.Debug.WriteLine("Failed to deserialize backup jobs: null result");
+                return new List<BackupJob>();
+            }
+
+            return jobs;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to load backup jobs: {ex.Message}");
+            // Create backup of corrupted file if it exists and has content
+            if (File.Exists(SettingsFile) && new FileInfo(SettingsFile).Length > 5)
+            {
+                try
+                {
+                    var backupPath = SettingsFile + ".corrupted";
+                    if (File.Exists(backupPath))
+                        File.Delete(backupPath);
+                    File.Copy(SettingsFile, backupPath);
+                    System.Diagnostics.Debug.WriteLine($"Backed up corrupted settings to: {backupPath}");
+                }
+                catch { /* Ignore backup failure */ }
+            }
             return new List<BackupJob>();
         }
     }
@@ -53,6 +74,18 @@ public static class BackupSettingsManager
         {
             Directory.CreateDirectory(SettingsFolder);
             var json = JsonSerializer.Serialize(jobs, JsonOptions);
+
+            // Don't overwrite existing file with empty content
+            if (File.Exists(SettingsFile))
+            {
+                var existingContent = File.ReadAllText(SettingsFile);
+                if (json.Trim() == "[]" && existingContent.Trim() != "[]")
+                {
+                    System.Diagnostics.Debug.WriteLine("WARNING: Skipping save - would overwrite backup jobs with empty array");
+                    return;
+                }
+            }
+
             File.WriteAllText(SettingsFile, json);
         }
         catch (Exception ex)

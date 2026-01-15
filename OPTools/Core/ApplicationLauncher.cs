@@ -13,7 +13,29 @@ public class ApplicationLauncher
 
     public ApplicationLauncher()
     {
-        _configPath = Path.Combine(Application.StartupPath, "OPToolsApps.Config");
+        var appDataPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OPTools"
+        );
+        Directory.CreateDirectory(appDataPath);
+
+        var newConfigPath = Path.Combine(appDataPath, "OPToolsApps.Config");
+        var oldConfigPath = Path.Combine(Application.StartupPath, "OPToolsApps.Config");
+
+        // Migrate from old location if it exists and new one doesn't
+        if (!File.Exists(newConfigPath) && File.Exists(oldConfigPath))
+        {
+            try
+            {
+                File.Copy(oldConfigPath, newConfigPath, false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to migrate OPToolsApps.Config: {ex.Message}");
+            }
+        }
+
+        _configPath = newConfigPath;
         _shortcuts = new List<string>();
         LoadShortcuts();
     }

@@ -92,13 +92,16 @@ public class BackupScheduler : IDisposable
         }
     }
 
-    public void LoadJobs(IEnumerable<BackupJob> jobs)
+    public void LoadJobs(IEnumerable<BackupJob> jobs, bool notifyChanges = false)
     {
         lock (_lock)
         {
             _jobs.Clear();
             _jobs.AddRange(jobs);
-            JobsChanged?.Invoke(this, EventArgs.Empty);
+            if (notifyChanges)
+            {
+                JobsChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
     }
 

@@ -55,6 +55,7 @@ namespace OPTools
 
     private string _targetPath;
     private FileUnlocker? _unlocker;
+        private NavigationRouter? _router;
     private ApplicationLauncher? _appLauncher;
 
     // Applications Panel
@@ -86,6 +87,9 @@ namespace OPTools
     // Backup Scheduler Panel
     private BackupSchedulerPanel _backupSchedulerPanel = null!;
 
+    // Context Menu Manager Panel
+    private ContextMenuManagerPanel _contextMenuManagerPanel = null!;
+
     // System Tray
     private NotifyIcon _notifyIcon = null!;
 
@@ -101,6 +105,8 @@ namespace OPTools
         InitializeComponent();
         AllowDragDropMessages();
         InitializeDragDrop();
+            // Initialize navigation router
+            _router = new NavigationRouter(_contentPanel);
         Application.AddMessageFilter(this);
         LoadLocks();
     }
@@ -232,7 +238,8 @@ namespace OPTools
             Image = IconHelper.GetActionIcon("Refresh"),
             BackColor = Color.FromArgb(60, 60, 60),
             Width = 50,
-            Dock = DockStyle.Right
+            Height = 36,
+            Margin = new Padding(0, 0, 0, 0)
         };
 
 
@@ -309,6 +316,7 @@ namespace OPTools
         InitializeCleanerPanel();
         InitializeProcessesPanel();
         InitializeContextMenuPanel();
+        InitializeContextMenuManagerPanel();
         InitializeSettingsPanel();
         InitializePackageHandlerPanel();
         InitializeBackupSchedulerPanel();
@@ -517,7 +525,9 @@ namespace OPTools
 
         // Add buttons
         AddProcessButton("Kill Node.js", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillNodeJs_Click(s, e));
-        AddProcessButton("Kill Dev Tools", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillDevTools_Click(s, e));
+        AddProcessButton("Kill Bun", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillBun_Click(s, e));
+        AddProcessButton("Kill WSL Relay", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillWsl_Click(s, e));
+        AddProcessButton("Kill All Dev Tools", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillDevTools_Click(s, e));
         AddProcessButton("Kill by Port", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillPort_Click(s, e));
 
 
@@ -889,7 +899,7 @@ namespace OPTools
 
         if (viewName == "contextmenu")
         {
-            RefreshContextEntries();
+            _contextMenuManagerPanel.LoadEntries();
         }
 
         // Refresh sidebar
@@ -1133,31 +1143,44 @@ namespace OPTools
     private void InitializeHeaderButtons()
     {
         _headerPanel.Controls.Clear();
-        
-        // Use FlowLayoutPanel for left-aligned buttons
+
+        // Use FlowLayoutPanel for all buttons
         FlowLayoutPanel flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             Padding = new Padding(0),
-            BackColor = Color.Transparent
+            BackColor = Color.Transparent,
+            AutoSize = false
         };
 
-        _btnUnlockAll.Margin = new Padding(0, 0, 16, 0);
-        _btnKillProcess.Margin = new Padding(0, 0, 16, 0);
-        _btnDelete.Margin = new Padding(0, 0, 16, 0);
-        _btnMove.Margin = new Padding(0, 0, 16, 0);
-
+        // Add action buttons
         flow.Controls.Add(_btnUnlockAll);
         flow.Controls.Add(_btnKillProcess);
         flow.Controls.Add(_btnDelete);
         flow.Controls.Add(_btnMove);
 
+        // Add refresh button with left margin to push it to the right
+        _btnRefresh.Margin = new Padding(20, 0, 0, 0);
+        flow.Controls.Add(_btnRefresh);
+
         _headerPanel.Controls.Add(flow);
-        _headerPanel.Controls.Add(_btnRefresh); // Refresh docked Right
     }
 
+    private void RegisterNavigationPanels()
+    {
+        if (_router == null) return;
+        _router.RegisterPanel("unlocker", _contentPanel);
+        _router.RegisterPanel("applications", _applicationsContentPanel);
+        _router.RegisterPanel("cleaner", _cleanerContentPanel);
+        _router.RegisterPanel("network", _networkContentPanel);
+        _router.RegisterPanel("processes", _processesContentPanel);
+        _router.RegisterPanel("contextmenu", _contextMenuContentPanel, () => _contextMenuManagerPanel.LoadEntries());
+        _router.RegisterPanel("packagehandler", _packageHandlerPanel, () => _packageHandlerPanel.Initialize());
+        _router.RegisterPanel("backupscheduler", _backupSchedulerPanel, () => _backupSchedulerPanel.Initialize());
+        _router.RegisterPanel("settings", _settingsContentPanel);
+    }
     private SidebarButton CreateSidebarButton(string text, Image icon, string tooltipText = "", bool isActive = false)
     {
         var btn = new SidebarButton
@@ -1184,8 +1207,9 @@ namespace OPTools
             Text = text,
             Image = icon,
             BackColor = color,
-            Width = 140,
-            Margin = new Padding(0, 0, 16, 0)
+            Size = new Size(120, 36),
+            Margin = new Padding(0, 0, 10, 0),
+            Padding = new Padding(8, 0, 8, 0)
         };
 
         if (!string.IsNullOrEmpty(tooltipText))
@@ -1248,7 +1272,23 @@ namespace OPTools
 
     private void ShowContextMenuForButton(Button btn, ContextMenuStrip menu)
     {
-        menu.Show(btn, new Point(btn.Width, 0));
+        menu.Show(btn.PointToScreen(new Point(btn.Width / 2, btn.Height)));
+    }
+
+    private void InitializeContextMenuManagerPanel()
+    {
+        _contextMenuContentPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0),
+            BackColor = _cBackground,
+            Visible = false
+        };
+
+        _contextMenuManagerPanel = new ContextMenuManagerPanel();
+
+        _contextMenuContentPanel.Controls.Add(_contextMenuManagerPanel);
+        _contentPanel.Controls.Add(_contextMenuContentPanel);
     }
 
 
@@ -1855,10 +1895,40 @@ namespace OPTools
         }
     }
 
+    private async void MenuKillBun_Click(object? sender, EventArgs e)
+    {
+        DialogResult confirm = MessageBox.Show(
+            "This will kill all Bun processes. Continue?",
+            "Confirm Kill",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (confirm == DialogResult.Yes)
+        {
+            var result = await ProcessKiller.KillBun();
+            ShowKillResult("Bun", result);
+        }
+    }
+
+    private async void MenuKillWsl_Click(object? sender, EventArgs e)
+    {
+        DialogResult confirm = MessageBox.Show(
+            "This will kill all WSL Relay processes. Continue?",
+            "Confirm Kill",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (confirm == DialogResult.Yes)
+        {
+            var result = await ProcessKiller.KillWslRelay();
+            ShowKillResult("WSL Relay", result);
+        }
+    }
+
     private async void MenuKillDevTools_Click(object? sender, EventArgs e)
     {
         DialogResult confirm = MessageBox.Show(
-            "This will kill all Node.js, Git Bash, Git, and WSL Relay processes. Continue?",
+            "This will kill all Node.js, Bun, Git Bash, Git, and WSL Relay processes. Continue?",
             "Confirm Kill",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);

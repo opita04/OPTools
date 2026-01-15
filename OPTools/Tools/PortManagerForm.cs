@@ -12,8 +12,10 @@ public partial class PortManagerForm : Form
     private Button _btnRefresh = null!;
     private Button _btnKill = null!;
     private TextBox _txtPid = null!;
+    private TextBox _txtSearch = null!;
     private Label _lblStatus = null!;
     private ProgressBar _progressBar = null!;
+    private List<PortInfo> _allPorts = new List<PortInfo>();
 
     public PortManagerForm()
     {
@@ -45,6 +47,32 @@ public partial class PortManagerForm : Form
 
         _listView.SelectedIndexChanged += ListView_SelectedIndexChanged;
 
+        Panel searchPanel = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 35
+        };
+
+        Label lblSearch = new Label
+        {
+            Text = "Search:",
+            Dock = DockStyle.Left,
+            Width = 70,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(10, 0, 0, 0)
+        };
+
+        _txtSearch = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            PlaceholderText = "Filter by process name...",
+            Width = 200
+        };
+        _txtSearch.TextChanged += TxtSearch_TextChanged;
+
+        searchPanel.Controls.Add(_txtSearch);
+        searchPanel.Controls.Add(lblSearch);
+
         Panel topPanel = new Panel
         {
             Dock = DockStyle.Top,
@@ -53,9 +81,9 @@ public partial class PortManagerForm : Form
 
         Label lblInstructions = new Label
         {
-            Text = "Select a port or enter PID:",
+            Text = "Select a port, enter PID, or search by process name:",
             Dock = DockStyle.Left,
-            Width = 150,
+            Width = 220,
             TextAlign = ContentAlignment.MiddleLeft,
             Padding = new Padding(10, 0, 0, 0)
         };
@@ -112,6 +140,7 @@ public partial class PortManagerForm : Form
         mainPanel.Controls.Add(_listView);
         mainPanel.Controls.Add(_progressBar);
         mainPanel.Controls.Add(_lblStatus);
+        mainPanel.Controls.Add(searchPanel);
 
         this.Controls.Add(mainPanel);
         this.Controls.Add(topPanel);
@@ -139,20 +168,10 @@ public partial class PortManagerForm : Form
 
         try
         {
-            var ports = await PortManager.GetActivePorts();
+            _allPorts = await PortManager.GetActivePorts();
+            DisplayPorts(_allPorts);
 
-            foreach (var port in ports)
-            {
-                ListViewItem item = new ListViewItem(port.Protocol);
-                item.SubItems.Add(port.Port.ToString());
-                item.SubItems.Add(port.ProcessId.ToString());
-                item.SubItems.Add(port.ProcessName);
-                item.SubItems.Add(port.State);
-                item.Tag = port;
-                _listView.Items.Add(item);
-            }
-
-            _lblStatus.Text = $"Found {ports.Count} active port(s)";
+            _lblStatus.Text = $"Found {_allPorts.Count} active port(s)";
         }
         catch (Exception ex)
         {
@@ -167,8 +186,47 @@ public partial class PortManagerForm : Form
         }
     }
 
+    private void DisplayPorts(List<PortInfo> ports)
+    {
+        _listView.BeginUpdate();
+        _listView.Items.Clear();
+
+        foreach (var port in ports)
+        {
+            ListViewItem item = new ListViewItem(port.Protocol);
+            item.SubItems.Add(port.Port.ToString());
+            item.SubItems.Add(port.ProcessId.ToString());
+            item.SubItems.Add(port.ProcessName);
+            item.SubItems.Add(port.State);
+            item.Tag = port;
+            _listView.Items.Add(item);
+        }
+
+        _listView.EndUpdate();
+    }
+
+    private void TxtSearch_TextChanged(object? sender, EventArgs e)
+    {
+        string searchTerm = _txtSearch.Text.ToLowerInvariant();
+
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            DisplayPorts(_allPorts);
+            _lblStatus.Text = $"Found {_allPorts.Count} active port(s)";
+        }
+        else
+        {
+            var filteredPorts = _allPorts
+                .Where(p => p.ProcessName.ToLowerInvariant().Contains(searchTerm))
+                .ToList();
+            DisplayPorts(filteredPorts);
+            _lblStatus.Text = $"Found {filteredPorts.Count} matching port(s)";
+        }
+    }
+
     private void BtnRefresh_Click(object? sender, EventArgs e)
     {
+        _txtSearch.Text = "";
         LoadPorts();
     }
 

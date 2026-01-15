@@ -131,7 +131,7 @@ public class BackupSchedulerPanel : Panel
 
         // Load saved jobs
         var jobs = BackupSettingsManager.LoadJobs();
-        _scheduler.LoadJobs(jobs);
+        _scheduler.LoadJobs(jobs, notifyChanges: false);
 
         // Start the scheduler
         _scheduler.Start();
