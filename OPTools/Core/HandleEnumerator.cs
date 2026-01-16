@@ -43,21 +43,23 @@ public class HandleEnumerator
             return locks;
         }
 
-        // Use Restart Manager API - the official Windows mechanism for file lock detection
+        // Strategy: Use BOTH Restart Manager AND legacy handle enumeration
+        // RM API is fast but misses kernel-level, antivirus, and memory-mapped locks
+        // Legacy enumeration is slower but catches more edge cases
+        
+        // Step 1: Try Restart Manager API first (fast, covers most user-mode locks)
         try
         {
             List<string> filesToCheck = new List<string>();
 
             if (_isDirectory)
             {
-                // For directories, we need to check all files within
                 try
                 {
                     filesToCheck.AddRange(Directory.GetFiles(_targetPath, "*", SearchOption.AllDirectories));
                 }
                 catch
                 {
-                    // If we can't enumerate, just check the directory itself
                     filesToCheck.Add(_targetPath);
                 }
             }
@@ -66,20 +68,56 @@ public class HandleEnumerator
                 filesToCheck.Add(_targetPath);
             }
 
-            // Check each file using Restart Manager
             foreach (string file in filesToCheck)
             {
                 var fileLocks = GetLockingProcesses(file);
                 locks.AddRange(fileLocks);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fall back to the old method if Restart Manager fails
-            locks = EnumerateLocksLegacy();
+            System.Diagnostics.Debug.WriteLine($"Restart Manager enumeration failed: {ex.Message}");
         }
 
-        return locks.DistinctBy(l => new { l.ProcessId, l.FilePath }).ToList();
+        // Step 2: ALWAYS supplement with legacy handle enumeration to catch locks RM misses
+        try
+        {
+            var legacyLocks = EnumerateLocksLegacy();
+            locks.AddRange(legacyLocks);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Legacy handle enumeration failed: {ex.Message}");
+        }
+
+        // Step 3: Check for memory-mapped file locks (Section objects)
+        try
+        {
+            var mmDetector = new MemoryMappedDetector(_targetPath);
+            var mmLocks = mmDetector.DetectMemoryMappedLocks();
+            locks.AddRange(mmLocks);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Memory-mapped detection failed: {ex.Message}");
+        }
+
+        // Step 4: Check for directory locks (processes with CWD in target path)
+        if (_isDirectory)
+        {
+            try
+            {
+                var dirDetector = new DirectoryLockDetector(_targetPath);
+                var dirLocks = dirDetector.DetectDirectoryLocks();
+                locks.AddRange(dirLocks);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Directory lock detection failed: {ex.Message}");
+            }
+        }
+
+        return locks.DistinctBy(l => new { l.ProcessId, l.FilePath, l.HandleType }).ToList();
     }
 
     private List<LockInfo> GetLockingProcesses(string filePath)

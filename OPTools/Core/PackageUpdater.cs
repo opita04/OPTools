@@ -59,6 +59,8 @@ namespace OPTools.Core
 
         /// <summary>
         /// Checks multiple packages for updates in parallel
+        /// NOTE: Currently only supports checking NPM/Bun packages against the npm registry.
+        /// Python and C++ packages are skipped (marked as "Unknown" status).
         /// </summary>
         public async Task<List<(PackageInfo package, string? latestVersion, bool isOutdated, bool notFound)>> CheckForUpdatesAsync(
             IEnumerable<PackageInfo> packages, 
@@ -69,10 +71,36 @@ namespace OPTools.Core
             var total = packageList.Count;
             int current = 0;
             
+            // Filter to only packages we can check against npm registry
+            // Exclude Python and C++ projects by checking project paths
+            var npmPackages = packageList.Where(p => 
+            {
+                // Explicitly skip non-npm global packages
+                if (p.ProjectPath == "__GLOBAL_PYTHON__") return false;
+                
+                // Include npm and bun global packages
+                if (p.ProjectPath == "__GLOBAL__" || p.ProjectPath == "__GLOBAL_BUN__") return true;
+                
+                // For local projects, check ecosystem (though all may default to NPM due to database)
+                // The safest approach is to ONLY check packages we're sure are NPM
+                // For now, assume local projects in database are NPM unless we have better metadata
+                return p.Ecosystem == Ecosystem.NPM || p.Ecosystem == Ecosystem.Bun;
+            }).ToList();
+            
+            // For non-NPM packages, add them as "not checked" (keep existing state)
+            var nonNpmPackages = packageList.Except(npmPackages).ToList();
+            foreach (var pkg in nonNpmPackages)
+            {
+                // Preserve existing outdated state, don't mark as up-to-date
+                results.Add((pkg, pkg.LatestVersion, pkg.IsOutdated, pkg.NotFound));
+                var newCount = System.Threading.Interlocked.Increment(ref current);
+                progress?.Report((newCount, total, $"{pkg.Name} (skipped - {pkg.Ecosystem})"));
+            }
+            
             // Limit concurrency to avoid overwhelming the registry or network
             using var semaphore = new System.Threading.SemaphoreSlim(10);
             
-            var tasks = packageList.Select(async package =>
+            var tasks = npmPackages.Select(async package =>
             {
                 await semaphore.WaitAsync();
                 try

@@ -92,6 +92,7 @@ namespace OPTools.Forms
         private Label _lblPageInfo = null!;
 
         private ToolTip _toolTip = null!;
+        private string? _currentGroupPath = null;
 
         public PackageHandlerPanel()
         {
@@ -180,7 +181,18 @@ namespace OPTools.Forms
             _btnBack = CreateActionButton("\u2190 All Projects", "\uE72B", _cGridHeader, "Return to projects view"); // Back Arrow Icon
             _btnBack.Width = 120;
             _btnBack.Visible = false;
-            _btnBack.Click += (s, e) => SwitchToProjects();
+            _btnBack.Click += (s, e) => 
+            {
+                if (_currentView == ViewMode.Packages)
+                {
+                     // Return to where we came from (Group or Root)
+                     SwitchToProjects();
+                }
+                else if (_currentView == ViewMode.Projects && _currentGroupPath != null)
+                {
+                    ExitGroup();
+                }
+            };
 
             // Action Buttons Panel
             FlowLayoutPanel actionPanel = new FlowLayoutPanel
@@ -716,9 +728,17 @@ namespace OPTools.Forms
                 // Filter data (this is fast, can be on UI thread)
                 if (ecosystem.HasValue)
                 {
-                    _allProjects = allProjects.Where(p => p.Ecosystem == ecosystem.Value).ToList();
+                    // When filtering by ecosystem, include:
+                    // 1. Groups (workspaces) - always shown regardless of ecosystem
+                    // 2. Projects matching the selected ecosystem
+                    _allProjects = allProjects.Where(p => 
+                        p.IsGroup || p.Ecosystem == ecosystem.Value
+                    ).ToList();
+                    
+                    // Filter packages to match visible projects
+                    var visibleProjectPaths = _allProjects.Select(p => p.Path).ToHashSet();
                     _allPackages = allPackages.Where(p => 
-                        _allProjects.Any(proj => proj.Path == p.ProjectPath)
+                        visibleProjectPaths.Contains(p.ProjectPath)
                     ).ToList();
                 }
                 else
@@ -752,11 +772,26 @@ namespace OPTools.Forms
         {
             _currentView = ViewMode.Projects;
             _currentProjectFilter = null;
+            
+            // Adjust Back Button Logic
+            if (_currentGroupPath != null)
+            {
+                _btnBack.Visible = true;
+                _btnBack.Text = "\u2190 All Workspaces";
+            }
+            else
+            {
+                _btnBack.Visible = false;
+            }
+            
             _packageListView.Visible = false;
             _projectsPanel.Visible = true;
-            // Pagination visibility handled in RenderProjects, but ensure it's not hidden if needed
+            _filterPanel.Visible = true;
+            _statsPanel.Visible = true; // Show stats in project view
             
-            _btnBack.Visible = false;
+            // Reset filter combos
+            // _cmbProject.Visible = false; // Keep hidden in project view
+            
             _chkOutdatedOnly.Visible = false; // Filter applies to packages usually
             _chkOutdatedOnly.Checked = false;
             _txtSearch.Text = "";
@@ -768,6 +803,19 @@ namespace OPTools.Forms
             
             _currentPage = 1; // Reset to first page
             RenderProjects();
+            UpdateStatsPanel();
+        }
+
+        private void EnterGroup(string groupPath)
+        {
+            _currentGroupPath = groupPath;
+            SwitchToProjects(); // Refresh view state
+        }
+
+        private void ExitGroup()
+        {
+            _currentGroupPath = null;
+            SwitchToProjects();
         }
 
         private void SwitchToPackages(string projectPath)
@@ -803,12 +851,19 @@ namespace OPTools.Forms
 
             var searchTerm = _txtSearch.Text.ToLower();
 
-            var allFilteredProjects = _allProjects.Where(p => 
+            // Filter projects based on _currentGroupPath
+            var projectsToDisplay = _allProjects.Where(p => 
+                (_currentGroupPath == null && p.ParentPath == null) || // Root level: show top-level projects and groups
+                (_currentGroupPath != null && p.ParentPath == _currentGroupPath) // Group level: show projects within this group
+            ).ToList();
+
+            var allFilteredProjects = projectsToDisplay.Where(p => 
                 string.IsNullOrEmpty(searchTerm) || 
                 p.Name.ToLower().Contains(searchTerm) || 
                 p.Path.ToLower().Contains(searchTerm)
             )
-            .OrderByDescending(p => p.Path == "__GLOBAL__") // Global Packages first
+            .OrderByDescending(p => p.IsGroup) // Groups first
+            .ThenByDescending(p => p.Path == "__GLOBAL__") // Global Packages next
             .ThenBy(p => p.Name)
             .ToList();
 
@@ -866,10 +921,32 @@ namespace OPTools.Forms
 
         private Panel CreateProjectCard(ProjectInfo project)
         {
-            // Calculate stats for this project
-            var packages = _allPackages.Where(p => p.ProjectPath == project.Path).ToList();
-            var outdatedCount = packages.Count(p => p.IsOutdated);
-            var totalCount = packages.Count;
+            // Calculate stats for this project (or group)
+            List<PackageInfo> packages;
+            int outdatedCount;
+            int totalCount;
+            int childProjectCount = 0;
+
+            if (project.IsGroup)
+            {
+                // For groups: aggregate stats from all child projects
+                var childProjectPaths = _allProjects
+                    .Where(proj => proj.ParentPath == project.Path)
+                    .Select(proj => proj.Path)
+                    .ToList();
+                
+                childProjectCount = childProjectPaths.Count;
+                packages = _allPackages.Where(p => childProjectPaths.Contains(p.ProjectPath)).ToList();
+                outdatedCount = packages.Count(p => p.IsOutdated);
+                totalCount = packages.Count;
+            }
+            else
+            {
+                // For regular projects: get packages directly
+                packages = _allPackages.Where(p => p.ProjectPath == project.Path).ToList();
+                outdatedCount = packages.Count(p => p.IsOutdated);
+                totalCount = packages.Count;
+            }
 
             var card = new Panel
             {
@@ -891,7 +968,15 @@ namespace OPTools.Forms
             
             card.MouseEnter +=OnMouseEnter;
             card.MouseLeave += OnMouseLeave;
-            card.Click += (s, e) => SwitchToPackages(project.Path);
+            
+            if (project.IsGroup)
+            {
+                card.Click += (s, e) => EnterGroup(project.Path);
+            }
+            else
+            {
+                card.Click += (s, e) => SwitchToPackages(project.Path);
+            }
 
             // Icon - Use distinct purple color for Global Packages
             bool isGlobal = project.Path == "__GLOBAL__";
@@ -899,14 +984,21 @@ namespace OPTools.Forms
             
             var lblIcon = new Label
             {
-                Text = isGlobal ? "\uE774" : "\uE8B7", // Globe icon for Global, Folder for others
+                Text = project.IsGroup ? "\uE8F1" : (isGlobal ? "\uE774" : "\uE8B7"), // Folder for Group, Globe for Global, Folder for others
                 Font = new Font("Segoe MDL2 Assets", 24),
-                ForeColor = isGlobal ? globalColor : _cAccent,
+                ForeColor = project.IsGroup ? _cSuccess : (isGlobal ? globalColor : _cAccent),
                 AutoSize = true,
                 Location = new Point(15, 15),
                 BackColor = Color.Transparent
             };
-            lblIcon.Click += (s, e) => SwitchToPackages(project.Path);
+            if (project.IsGroup)
+            {
+                lblIcon.Click += (s, e) => EnterGroup(project.Path);
+            }
+            else
+            {
+                lblIcon.Click += (s, e) => SwitchToPackages(project.Path);
+            }
             lblIcon.MouseEnter += OnMouseEnter; 
 
             // Title
@@ -920,7 +1012,14 @@ namespace OPTools.Forms
                 Location = new Point(15, 50),
                 BackColor = Color.Transparent
             };
-            lblName.Click += (s, e) => SwitchToPackages(project.Path);
+            if (project.IsGroup)
+            {
+                lblName.Click += (s, e) => EnterGroup(project.Path);
+            }
+            else
+            {
+                lblName.Click += (s, e) => SwitchToPackages(project.Path);
+            }
             lblName.MouseEnter += OnMouseEnter;
 
             // Path
@@ -934,7 +1033,14 @@ namespace OPTools.Forms
                 Location = new Point(15, 75),
                 BackColor = Color.Transparent
             };
-            lblPath.Click += (s, e) => SwitchToPackages(project.Path);
+            if (project.IsGroup)
+            {
+                lblPath.Click += (s, e) => EnterGroup(project.Path);
+            }
+            else
+            {
+                lblPath.Click += (s, e) => SwitchToPackages(project.Path);
+            }
             lblPath.MouseEnter += OnMouseEnter;
 
             // Stats Badge Area
@@ -944,19 +1050,35 @@ namespace OPTools.Forms
                 Height = 40,
                 BackColor = Color.Transparent 
             };
-            pnlStats.Click += (s, e) => SwitchToPackages(project.Path);
+            if (project.IsGroup)
+            {
+                pnlStats.Click += (s, e) => EnterGroup(project.Path);
+            }
+            else
+            {
+                pnlStats.Click += (s, e) => SwitchToPackages(project.Path);
+            }
             pnlStats.MouseEnter += OnMouseEnter;
 
             // Package Count Label
             var lblCount = new Label
             {
-                Text = $"{totalCount} packages",
+                Text = project.IsGroup 
+                    ? $"{childProjectCount} projects" 
+                    : $"{totalCount} packages",
                 ForeColor = _cTextDim,
                 AutoSize = true,
                 Location = new Point(15, 10),
                 Font = new Font("Segoe UI", 9)
             };
-            lblCount.Click += (s, e) => SwitchToPackages(project.Path);
+            if (project.IsGroup)
+            {
+                lblCount.Click += (s, e) => EnterGroup(project.Path);
+            }
+            else
+            {
+                lblCount.Click += (s, e) => SwitchToPackages(project.Path);
+            }
             lblCount.MouseEnter += OnMouseEnter;
 
             // Updates Label
@@ -968,7 +1090,14 @@ namespace OPTools.Forms
                 Location = new Point(150, 10), // Push to right
                 Font = new Font("Segoe UI", 9, FontStyle.Bold)
             };
-            lblUpdates.Click += (s, e) => SwitchToPackages(project.Path);
+            if (project.IsGroup)
+            {
+                lblUpdates.Click += (s, e) => EnterGroup(project.Path);
+            }
+            else
+            {
+                lblUpdates.Click += (s, e) => SwitchToPackages(project.Path);
+            }
             lblUpdates.MouseEnter += OnMouseEnter;
 
             pnlStats.Controls.Add(lblCount);
@@ -1169,13 +1298,29 @@ namespace OPTools.Forms
         {
             using var dialog = new FolderBrowserDialog
             {
-                Description = "Select a specific project folder to add",
+                Description = "Select a folder to add",
                 UseDescriptionForTitle = true
             };
             
             if (dialog.ShowDialog() == DialogResult.OK)
             {
-                await AddSingleProjectAsync(dialog.SelectedPath);
+                // Ask user if this is a single project or a workspace
+                var choice = MessageBox.Show(
+                    $"How do you want to add '{Path.GetFileName(dialog.SelectedPath)}'?\n\n" +
+                    "Yes: As a WORKSPACE (Contains multiple projects)\n" +
+                    "No: As a SINGLE PROJECT (Contains package.json, requirements.txt, etc.)",
+                    "Add Folder",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question);
+
+                if (choice == DialogResult.Yes)
+                {
+                    await AddWorkspaceAsync(dialog.SelectedPath);
+                }
+                else if (choice == DialogResult.No)
+                {
+                    await AddSingleProjectAsync(dialog.SelectedPath);
+                }
             }
         }
 
@@ -1916,6 +2061,73 @@ namespace OPTools.Forms
         private void ListView_DrawSubItem(object? sender, DrawListViewSubItemEventArgs e)
         {
             e.DrawDefault = true;
+        }
+
+        private async Task AddWorkspaceAsync(string path)
+        {
+            SetLoading(true);
+            UpdateStatus($"Scanning workspace: {path}...");
+
+            try
+            {
+                // 1. Create and Save the Workspace Group
+                var groupName = new DirectoryInfo(path).Name;
+                var groupProject = new ProjectInfo
+                {
+                    Name = groupName,
+                    Path = path,
+                    IsGroup = true,
+                    LastScanned = DateTime.Now,
+                    CreatedAt = DateTime.Now,
+                    UpdatedAt = DateTime.Now,
+                    Ecosystem = Ecosystem.NPM // Default or "Workspace"
+                };
+                _database?.UpsertProject(groupProject);
+
+                // 2. Scan subdirectories
+                var subDirs = Directory.GetDirectories(path);
+                var progress = new Progress<string>(msg => UpdateStatus(msg));
+                int projectsFound = 0;
+
+                foreach (var subDir in subDirs)
+                {
+                    // Scan for all ecosystems
+                    var ecosystems = new[] { Ecosystem.NPM, Ecosystem.Python, Ecosystem.Bun, Ecosystem.Cpp };
+                    foreach (var eco in ecosystems)
+                    {
+                        var result = await _scanner!.ScanDirectoryAsync(subDir, eco, progress);
+                        if (result.Projects.Count > 0)
+                        {
+                            foreach (var p in result.Projects)
+                            {
+                                p.ParentPath = path; // Link to workspace
+                                _database?.UpsertProject(p);
+                                projectsFound++;
+                            }
+                            foreach (var pkg in result.Packages)
+                            {
+                                _database?.UpsertPackage(pkg);
+                            }
+                        }
+                    }
+                }
+                
+                // Update group stats
+                groupProject.PackageCount = projectsFound; 
+                _database?.UpsertProject(groupProject);
+
+                LoadData();
+                UpdateStatus($"Workspace added: {groupName} with {projectsFound} projects.");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Failed to add workspace: {ex.Message}");
+                AddLog(LogLevel.Error, "Add Workspace Failed", ex.Message);
+            }
+            finally
+            {
+                SetLoading(false);
+            }
         }
 
         private async Task AddSingleProjectAsync(string path)

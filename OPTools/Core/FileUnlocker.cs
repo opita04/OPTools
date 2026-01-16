@@ -235,6 +235,36 @@ public class FileUnlocker
                         errorMsg += $"\n• {lockInfo.ProcessName} (PID: {lockInfo.ProcessId})";
                     }
                 }
+                else
+                {
+                    // No locks found but deletion failed - use PermissionChecker for diagnostics
+                    var diagnostics = PermissionChecker.GetDiagnostics(_targetPath);
+                    
+                    if (diagnostics.Issues.Count > 0)
+                    {
+                        errorMsg += "\n\nPermission/attribute issues:";
+                        foreach (var issue in diagnostics.Issues)
+                        {
+                            errorMsg += $"\n• {issue}";
+                        }
+                        
+                        if (!diagnostics.IsOwner && !string.IsNullOrEmpty(diagnostics.Owner))
+                        {
+                            errorMsg += $"\n• Owner: {diagnostics.Owner} (you are: {diagnostics.CurrentUser})";
+                        }
+                    }
+                    else
+                    {
+                        errorMsg += "\n\nNo permission issues detected. Possible causes:";
+                        errorMsg += "\n• Antivirus/security software may be blocking access";
+                        errorMsg += "\n• Kernel-level lock not detectable by user-mode APIs";
+                    }
+                    
+                    if (ex is UnauthorizedAccessException && !diagnostics.HasDeletePermission)
+                    {
+                        errorMsg += "\n\n💡 Try running OPTools as Administrator";
+                    }
+                }
             }
             catch (Exception innerEx)
             {

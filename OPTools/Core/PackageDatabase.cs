@@ -39,7 +39,9 @@ namespace OPTools.Core
                     package_count INTEGER DEFAULT 0,
                     ecosystem TEXT DEFAULT 'NPM',
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    is_group INTEGER DEFAULT 0,
+                    parent_path TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS packages (
@@ -123,20 +125,39 @@ namespace OPTools.Core
                 addEcosystemCmd.ExecuteNonQuery();
             }
             catch { /* Column already exists */ }
+
+            // Migration: Add is_group and parent_path columns
+            try
+            {
+                using var addGroupCmd = _connection.CreateCommand();
+                addGroupCmd.CommandText = "ALTER TABLE projects ADD COLUMN is_group INTEGER DEFAULT 0";
+                addGroupCmd.ExecuteNonQuery();
+            }
+            catch { /* Column already exists */ }
+
+            try
+            {
+                using var addParentCmd = _connection.CreateCommand();
+                addParentCmd.CommandText = "ALTER TABLE projects ADD COLUMN parent_path TEXT";
+                addParentCmd.ExecuteNonQuery();
+            }
+            catch { /* Column already exists */ }
         }
 
         public void UpsertProject(ProjectInfo project)
         {
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO projects (name, path, last_scanned, package_count, ecosystem, created_at, updated_at)
-                VALUES (@name, @path, @lastScanned, @packageCount, @ecosystem, @createdAt, @updatedAt)
+                INSERT INTO projects (name, path, last_scanned, package_count, ecosystem, created_at, updated_at, is_group, parent_path)
+                VALUES (@name, @path, @lastScanned, @packageCount, @ecosystem, @createdAt, @updatedAt, @isGroup, @parentPath)
                 ON CONFLICT(path) DO UPDATE SET
                     name = @name,
                     last_scanned = @lastScanned,
                     package_count = @packageCount,
                     ecosystem = @ecosystem,
-                    updated_at = @updatedAt
+                    updated_at = @updatedAt,
+                    is_group = @isGroup,
+                    parent_path = @parentPath
             ";
             cmd.Parameters.AddWithValue("@name", project.Name);
             cmd.Parameters.AddWithValue("@path", project.Path);
@@ -145,6 +166,8 @@ namespace OPTools.Core
             cmd.Parameters.AddWithValue("@ecosystem", project.Ecosystem.ToString());
             cmd.Parameters.AddWithValue("@createdAt", project.CreatedAt.ToString("o"));
             cmd.Parameters.AddWithValue("@updatedAt", DateTime.Now.ToString("o"));
+            cmd.Parameters.AddWithValue("@isGroup", project.IsGroup ? 1 : 0);
+            cmd.Parameters.AddWithValue("@parentPath", project.ParentPath ?? (object)DBNull.Value);
             cmd.ExecuteNonQuery();
         }
 
@@ -255,6 +278,17 @@ namespace OPTools.Core
                     CreatedAt = DateTime.Parse(reader.GetString(reader.GetOrdinal("created_at"))),
                     UpdatedAt = DateTime.Parse(reader.GetString(reader.GetOrdinal("updated_at")))
                 });
+                
+                // Read extended fields
+                try {
+                    var ordinalGroup = reader.GetOrdinal("is_group");
+                    if (!reader.IsDBNull(ordinalGroup))
+                        projects[projects.Count - 1].IsGroup = reader.GetInt32(ordinalGroup) == 1;
+                        
+                    var ordinalParent = reader.GetOrdinal("parent_path");
+                    if (!reader.IsDBNull(ordinalParent))
+                        projects[projects.Count - 1].ParentPath = reader.GetString(ordinalParent);
+                } catch {}
             }
             return projects;
         }

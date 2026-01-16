@@ -663,6 +663,7 @@ namespace OPTools.Core
                     {
                         Name = projectName,
                         Path = projectPath,
+                        Ecosystem = Ecosystem.NPM,
                         LastScanned = DateTime.Now,
                         PackageCount = packages.Count,
                         CreatedAt = DateTime.Now,
@@ -984,6 +985,7 @@ namespace OPTools.Core
                 Path = installedPath,
                 ProjectPath = projectPath,
                 IsDev = isDev,
+                Ecosystem = Ecosystem.NPM,
                 CreatedAt = DateTime.Now,
                 UpdatedAt = DateTime.Now,
                 

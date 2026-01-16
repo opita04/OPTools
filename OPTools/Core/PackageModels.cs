@@ -96,6 +96,10 @@ namespace OPTools.Core
             "__GLOBAL_PYTHON__" => "Global Python Packages",
             _ => Name
         };
+
+        // Workspace / Grouping Support
+        public bool IsGroup { get; set; }
+        public string? ParentPath { get; set; }
     }
 
     /// <summary>
