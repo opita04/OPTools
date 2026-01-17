@@ -14,6 +14,8 @@ namespace OPTools.Core
     /// </summary>
     public class PackageScanner
     {
+        private readonly GitService _gitService = new GitService();
+
         private readonly HashSet<string> _excludedDirs = new(StringComparer.OrdinalIgnoreCase)
         {
             "node_modules",
@@ -197,7 +199,8 @@ namespace OPTools.Core
                         LastScanned = DateTime.Now,
                         PackageCount = 0,
                         CreatedAt = DateTime.Now,
-                        UpdatedAt = DateTime.Now
+                        UpdatedAt = DateTime.Now,
+                        IsGitRepo = _gitService.IsGitRepository(projectPath)
                     };
                     result.Projects.Add(project);
                 }
@@ -345,7 +348,8 @@ namespace OPTools.Core
                     LastScanned = DateTime.Now,
                     PackageCount = packages.Count,
                     CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
+                    UpdatedAt = DateTime.Now,
+                    IsGitRepo = _gitService.IsGitRepository(projectPath)
                 };
 
                 result.Projects.Add(project);
@@ -543,7 +547,8 @@ namespace OPTools.Core
                     LastScanned = DateTime.Now,
                     PackageCount = packages.Count,
                     CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
+                    UpdatedAt = DateTime.Now,
+                    IsGitRepo = _gitService.IsGitRepository(projectPath)
                 };
 
                 result.Projects.Add(project);
@@ -657,7 +662,7 @@ namespace OPTools.Core
                 
                 var packages = ParsePackageJson(packageJsonPath, projectPath);
                 
-                if (packages.Count > 0)
+                if (packages.Count > 0 || _gitService.IsGitRepository(projectPath))
                 {
                     var project = new ProjectInfo
                     {
@@ -667,8 +672,28 @@ namespace OPTools.Core
                         LastScanned = DateTime.Now,
                         PackageCount = packages.Count,
                         CreatedAt = DateTime.Now,
-                        UpdatedAt = DateTime.Now
+                        UpdatedAt = DateTime.Now,
+                        IsGitRepo = _gitService.IsGitRepository(projectPath)
                     };
+
+                    if (project.IsGitRepo)
+                    {
+                        // Try to get GitHub URL from package.json or git config (for now package.json via ParsePackageJson logic if available, or just use git service if we enhance it)
+                        // Actually ParsePackageJson returns packages, not project metadata directly.
+                        // We might need to read package.json here for project metadata or assume one of the packages is the project itself?
+                        // Usually existing logic creates packages. Let's see.
+                        
+                        // Async within sync method? ScanDirectoryAsync wraps this in Task.Run.
+                        // We can use .Result or wait, but better to make this async if possible?
+                        // The whole method ScanDirectoryAsync is async but delegates to sync methods.
+                        // For now we will check simple things.
+                        
+                        // We can't easily wait here without changing method signature to async. 
+                        // Implementation plan said "Ensure scanning to detect .git folder".
+                        // Use synchronous checks or fire-and-forget?
+                        // Best to allow async up the chain later, but for now just marking IsGitRepo is good.
+                        // We can populate detailed git info (versions) during "Check Updates" or "Add Project" separately.
+                    }
                     
                     result.Projects.Add(project);
                     result.Packages.AddRange(packages);

@@ -100,6 +100,13 @@ namespace OPTools.Core
         // Workspace / Grouping Support
         public bool IsGroup { get; set; }
         public string? ParentPath { get; set; }
+
+        // GitHub / Git Integration
+        public bool IsGitRepo { get; set; }
+        public string? GitHubUrl { get; set; }
+        public string? LocalVersion { get; set; } // Current Commit Hash or Tag
+        public string? RemoteVersion { get; set; } // Remote Commit Hash or Tag
+        public bool UpdateAvailable { get; set; }
     }
 
     /// <summary>

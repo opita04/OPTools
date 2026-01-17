@@ -313,9 +313,34 @@ namespace OPTools.Core
             
             try
             {
-                // Run npm update in the project directory
-                // This respects semver in package.json and updates package-lock.json
-                var (success, output, error) = await RunNpmCommandAsync("npm update", projectPath);
+                string command;
+                string? workingDir = projectPath;
+                
+                // Determine the correct update command based on project type
+                if (projectPath == "__GLOBAL_BUN__")
+                {
+                    command = "bun update -g";
+                    workingDir = null;
+                }
+                else if (projectPath == "__GLOBAL__")
+                {
+                    command = "npm update -g";
+                    workingDir = null;
+                }
+                else if (projectPath == "__GLOBAL_PYTHON__")
+                {
+                    // Python doesn't have a global "update all" - skip
+                    result.Success = false;
+                    result.ErrorMessage = "Python global packages must be updated individually.";
+                    return result;
+                }
+                else
+                {
+                    // Local project - detect package manager from lockfiles
+                    command = DetectUpdateCommand(projectPath);
+                }
+                
+                var (success, output, error) = await RunNpmCommandAsync(command, workingDir);
                 
                 if (success)
                 {
@@ -387,6 +412,53 @@ namespace OPTools.Core
             catch (Exception ex)
             {
                 return (false, "", $"Process error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Detects the package manager for a local project and returns the appropriate update command
+        /// </summary>
+        private string DetectUpdateCommand(string projectPath)
+        {
+            try
+            {
+                // Check for bun lockfile first (bun.lockb or bun.lock)
+                if (System.IO.File.Exists(System.IO.Path.Combine(projectPath, "bun.lockb")) ||
+                    System.IO.File.Exists(System.IO.Path.Combine(projectPath, "bun.lock")))
+                {
+                    return "bun update";
+                }
+                
+                // Check for yarn lockfile
+                if (System.IO.File.Exists(System.IO.Path.Combine(projectPath, "yarn.lock")))
+                {
+                    return "yarn upgrade";
+                }
+                
+                // Check for pnpm lockfile
+                if (System.IO.File.Exists(System.IO.Path.Combine(projectPath, "pnpm-lock.yaml")))
+                {
+                    return "pnpm update";
+                }
+                
+                // Check for Python projects
+                if (System.IO.File.Exists(System.IO.Path.Combine(projectPath, "requirements.txt")))
+                {
+                    return "pip install -r requirements.txt --upgrade";
+                }
+                
+                if (System.IO.File.Exists(System.IO.Path.Combine(projectPath, "Pipfile")))
+                {
+                    return "pipenv update";
+                }
+                
+                // Default to npm (check for package-lock.json or package.json)
+                return "npm update";
+            }
+            catch
+            {
+                // Fallback to npm on any error
+                return "npm update";
             }
         }
 

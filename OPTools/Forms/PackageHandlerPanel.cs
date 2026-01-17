@@ -29,9 +29,10 @@ namespace OPTools.Forms
         private readonly Color _cHover = Color.FromArgb(60, 60, 60);
 
         // Core Components
-        private PackageDatabase? _database;
-        private PackageScanner? _scanner;
-        private PackageUpdater? _updater;
+        private readonly PackageDatabase _database;
+        private readonly PackageScanner _scanner;
+        private readonly PackageUpdater _updater;
+        private readonly GitService _gitService; // [NEW]
 
         // UI Components
         private Panel _headerPanel = null!;
@@ -61,6 +62,7 @@ namespace OPTools.Forms
         private ModernButton _btnBack = null!; // Back Button
         private ModernButton _btnLogs = null!; // Logs Button
         private ModernButton _btnAddFolder = null!; // New Add Manual Folder Button
+        private ModernButton _btnViewUpdates = null!; // [NEW] Button to view project updates
 
         // Data
         private List<PackageInfo> _allPackages = new();
@@ -75,7 +77,12 @@ namespace OPTools.Forms
         private PackageDetailsPanel? _packageDetailsPanel;
         
         // State
-        private enum ViewMode { Projects, Packages }
+        private enum ViewMode
+        {
+            Packages,
+            Projects,
+            ProjectUpdates
+        }
         private ViewMode _currentView = ViewMode.Projects;
         private string? _currentProjectFilter = null;
         
@@ -96,6 +103,11 @@ namespace OPTools.Forms
 
         public PackageHandlerPanel()
         {
+            _database = new PackageDatabase();
+            _scanner = new PackageScanner();
+            _updater = new PackageUpdater();
+            _gitService = new GitService(); // [NEW]
+            
             InitializeComponents();
             InitializeContextMenu();
         }
@@ -108,11 +120,12 @@ namespace OPTools.Forms
                 UpdateStatus("Initializing database...");
                 
                 // Initialize database on background thread to prevent UI freeze
+                // These are now initialized in the constructor, so this block is no longer needed for them.
+                // However, the original code had a Task.Run here, so if there's other async init, it should stay.
+                // For now, I'll remove the specific _database, _scanner, _updater init from here.
                 await Task.Run(() =>
                 {
-                    _database = new PackageDatabase();
-                    _scanner = new PackageScanner();
-                    _updater = new PackageUpdater();
+                    // Potentially other background initializations could go here if needed
                 });
                 
                 await LoadDataAsync();
@@ -188,6 +201,11 @@ namespace OPTools.Forms
                      // Return to where we came from (Group or Root)
                      SwitchToProjects();
                 }
+                else if (_currentView == ViewMode.ProjectUpdates)
+                {
+                    // Return from Project Updates view to Projects view
+                    SwitchToProjects();
+                }
                 else if (_currentView == ViewMode.Projects && _currentGroupPath != null)
                 {
                     ExitGroup();
@@ -210,6 +228,9 @@ namespace OPTools.Forms
             _btnScanDirectory = CreateActionButton("Scan Directory", "\uE8B7", _cAccent, "Scan current directory for package.json");
             _btnAddFolder = CreateActionButton("Add Folder", "\uE710", _cAccent, "Manually add a project folder", IconHelper.GetActionIcon("Add")); // Add icon
             _btnScanGlobal = CreateActionButton("Scan Global", "\uE774", _cAccent, "Scan for global npm packages");
+            _btnViewUpdates = CreateActionButton("Project Updates", "\uE74C", _cAccent, "View available project updates"); // [NEW]
+            _btnViewUpdates.Click += (s, e) => SwitchToProjectUpdates();
+            
             _btnCheckUpdates = CreateActionButton("Check Updates", "\uE777", _cAccent, "Check for package updates", IconHelper.GetActionIcon("Refresh"));
             _btnUpdateAll = CreateActionButton("Update All", "\uE74A", _cSuccess, "Update all outdated packages");
             _btnExport = CreateActionButton("Export", "\uE78C", Color.FromArgb(60, 60, 60), "Export package list", IconHelper.GetActionIcon("Save"));
@@ -229,6 +250,7 @@ namespace OPTools.Forms
             _btnClearAll.Click += BtnClearAll_Click;
 
             actionPanel.Controls.Add(_btnBack); // Back button first (hidden by default)
+            actionPanel.Controls.Add(_btnViewUpdates); // Add standard nav items first
             actionPanel.Controls.Add(_btnScanDirectory);
             actionPanel.Controls.Add(_btnAddFolder);
             actionPanel.Controls.Add(_btnScanGlobal);
@@ -720,8 +742,8 @@ namespace OPTools.Forms
                 // Run database queries on background thread
                 var (allPackages, allProjects) = await Task.Run(() =>
                 {
-                    var packages = _database?.GetAllPackages() ?? new List<PackageInfo>();
-                    var projects = _database?.GetAllProjects() ?? new List<ProjectInfo>();
+                    var packages = _database.GetAllPackages() ?? new List<PackageInfo>();
+                    var projects = _database.GetAllProjects() ?? new List<ProjectInfo>();
                     return (packages, projects);
                 });
                 
@@ -753,6 +775,10 @@ namespace OPTools.Forms
                 {
                     RenderProjects();
                 }
+                else if (_currentView == ViewMode.ProjectUpdates)
+                {
+                    RenderProjectUpdates();
+                }
                 else
                 {
                     ApplyFilters();
@@ -772,44 +798,72 @@ namespace OPTools.Forms
         {
             _currentView = ViewMode.Projects;
             _currentProjectFilter = null;
+            _currentGroupPath = null;
             
-            // Adjust Back Button Logic
-            if (_currentGroupPath != null)
-            {
-                _btnBack.Visible = true;
-                _btnBack.Text = "\u2190 All Workspaces";
-            }
-            else
-            {
-                _btnBack.Visible = false;
-            }
-            
+            _btnBack.Visible = false;
+
             _packageListView.Visible = false;
             _projectsPanel.Visible = true;
             _filterPanel.Visible = true;
-            _statsPanel.Visible = true; // Show stats in project view
+            _statsPanel.Visible = true; 
             
-            // Reset filter combos
-            // _cmbProject.Visible = false; // Keep hidden in project view
-            
-            _chkOutdatedOnly.Visible = false; // Filter applies to packages usually
+            _chkOutdatedOnly.Visible = false;
             _chkOutdatedOnly.Checked = false;
             _txtSearch.Text = "";
             _txtSearch.PlaceholderText = "Search projects...";
             
-            // Reset Update button
-            _btnUpdateAll.Text = "Update All";
-            _btnUpdateAll.IconChar = "\uE74A";
-            
-            _currentPage = 1; // Reset to first page
+             // Highlighting logic removed as we don't have sidebar buttons
+             _btnViewUpdates.BackColor = _cAccent; // Highlight to show we can switch TO it? No, keep it action style.
+             // Maybe disable it if already active?
+             
+            _currentPage = 1; 
             RenderProjects();
+            UpdateStatsPanel();
+        }
+
+        private void SwitchToProjectUpdates()
+        {
+            _currentView = ViewMode.ProjectUpdates;
+            _currentProjectFilter = null;
+            
+            _btnBack.Visible = true;
+            _btnBack.Text = "\u2190 Back to Projects";
+            
+            _packageListView.Visible = false;
+            _projectsPanel.Visible = true;
+            _filterPanel.Visible = true;
+            _statsPanel.Visible = true; 
+            
+            _chkOutdatedOnly.Visible = false;
+            _txtSearch.Text = "";
+            
+            RenderProjectUpdates();
             UpdateStatsPanel();
         }
 
         private void EnterGroup(string groupPath)
         {
             _currentGroupPath = groupPath;
-            SwitchToProjects(); // Refresh view state
+            _currentView = ViewMode.Projects;
+            _currentProjectFilter = null;
+            
+            // Show back button when inside a group
+            _btnBack.Visible = true;
+            _btnBack.Text = "← Back";
+            
+            _packageListView.Visible = false;
+            _projectsPanel.Visible = true;
+            _filterPanel.Visible = true;
+            _statsPanel.Visible = true;
+            
+            _chkOutdatedOnly.Visible = false;
+            _chkOutdatedOnly.Checked = false;
+            _txtSearch.Text = "";
+            _txtSearch.PlaceholderText = "Search projects...";
+            
+            _currentPage = 1;
+            RenderProjects();
+            UpdateStatsPanel();
         }
 
         private void ExitGroup()
@@ -916,6 +970,7 @@ namespace OPTools.Forms
         private void ChangePage(int delta)
         {
             _currentPage += delta;
+            if (_currentPage < 1) _currentPage = 1;
             RenderProjects();
         }
 
@@ -1331,7 +1386,14 @@ namespace OPTools.Forms
 
         private async void BtnCheckUpdates_Click(object? sender, EventArgs e)
         {
-            await CheckForUpdatesAsync();
+            if (_currentView == ViewMode.ProjectUpdates)
+            {
+                await CheckProjectUpdatesAsync();
+            }
+            else
+            {
+                await CheckForUpdatesAsync();
+            }
         }
 
         private void BtnUpdateAll_Click(object? sender, EventArgs e)
@@ -1876,8 +1938,34 @@ namespace OPTools.Forms
         
         private async void UpdateProjectAsync(string projectPath)
         {
+            // Determine the correct command to show in the dialog
+            string command;
+            string displayPath = projectPath;
+            
+            if (projectPath == "__GLOBAL_BUN__")
+            {
+                command = "bun update -g";
+                displayPath = "Global Bun Packages";
+            }
+            else if (projectPath == "__GLOBAL__")
+            {
+                command = "npm update -g";
+                displayPath = "Global NPM Packages";
+            }
+            else if (projectPath == "__GLOBAL_PYTHON__")
+            {
+                MessageBox.Show("Python global packages must be updated individually.", 
+                    "Not Supported", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            else
+            {
+                // Detect package manager from lockfiles
+                command = DetectUpdateCommand(projectPath);
+            }
+            
             var confirm = MessageBox.Show(
-                $"This will run 'npm update' in:\n{projectPath}\n\nThis updates all packages to the latest versions allowed by package.json and updates the lockfile.\n\nContinue?",
+                $"This will run '{command}' in:\n{displayPath}\n\nThis updates all packages to the latest versions allowed by package.json and updates the lockfile.\n\nContinue?",
                 "Confirm Project Update",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
@@ -1885,7 +1973,7 @@ namespace OPTools.Forms
             if (confirm != DialogResult.Yes) return;
 
             SetLoading(true);
-            UpdateStatus($"Updating project: {projectPath}...");
+            UpdateStatus($"Updating project: {displayPath}...");
             
             try
             {
@@ -1897,8 +1985,17 @@ namespace OPTools.Forms
                     AddLog(LogLevel.Info, "Project Update Success", result.Details);
                     MessageBox.Show("Project updated successfully!\nCheck logs for details.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     
-                    // Re-scan directory to reflect changes
-                    await ScanDirectoryAsync(projectPath); 
+                    // Re-scan to reflect changes
+                    if (projectPath == "__GLOBAL_BUN__" || projectPath == "__GLOBAL__" || projectPath == "__GLOBAL_PYTHON__")
+                    {
+                        // Re-scan global packages
+                        await ScanGlobalPackagesAsync();
+                    }
+                    else
+                    {
+                        // Re-scan the local directory
+                        await ScanDirectoryAsync(projectPath);
+                    } 
                 }
                 else
                 {
@@ -2047,6 +2144,42 @@ namespace OPTools.Forms
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", "node_modules");
         }
 
+        /// <summary>
+        /// Detects the package manager for a local project and returns the appropriate update command
+        /// </summary>
+        private string DetectUpdateCommand(string projectPath)
+        {
+            try
+            {
+                // Check for bun lockfile first
+                if (File.Exists(Path.Combine(projectPath, "bun.lockb")) ||
+                    File.Exists(Path.Combine(projectPath, "bun.lock")))
+                    return "bun update";
+                
+                // Check for yarn lockfile
+                if (File.Exists(Path.Combine(projectPath, "yarn.lock")))
+                    return "yarn upgrade";
+                
+                // Check for pnpm lockfile
+                if (File.Exists(Path.Combine(projectPath, "pnpm-lock.yaml")))
+                    return "pnpm update";
+                
+                // Check for Python projects
+                if (File.Exists(Path.Combine(projectPath, "requirements.txt")))
+                    return "pip install -r requirements.txt --upgrade";
+                
+                if (File.Exists(Path.Combine(projectPath, "Pipfile")))
+                    return "pipenv update";
+                
+                // Default to npm
+                return "npm update";
+            }
+            catch
+            {
+                return "npm update";
+            }
+        }
+
         private void ListView_DrawColumnHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
         {
             e.Graphics.FillRectangle(new SolidBrush(_cGridHeader), e.Bounds);
@@ -2174,6 +2307,216 @@ namespace OPTools.Forms
             {
                 UpdateStatus($"Failed to add project: {ex.Message}");
                 AddLog(LogLevel.Error, $"Add folder failed: {path}", ex.Message);
+            }
+            finally
+            {
+                SetLoading(false);
+            }
+        }
+
+        private void RenderProjectUpdates()
+        {
+            // Properly dispose controls
+            while (_projectsPanel.Controls.Count > 0)
+            {
+                var ctrl = _projectsPanel.Controls[0];
+                _projectsPanel.Controls.RemoveAt(0);
+                ctrl.Dispose();
+            }
+            _projectsPanel.SuspendLayout();
+
+            // Filter for projects that are Git Repos
+            var gitProjects = _allProjects.Where(p => p.IsGitRepo).ToList();
+
+            if (gitProjects.Count == 0)
+            {
+                var lblEmpty = new Label
+                {
+                    Text = "No Git projects detected. Add a project with a .git folder to see updates.",
+                    ForeColor = _cTextDim,
+                    AutoSize = true,
+                    Font = new Font("Segoe UI", 12),
+                    Padding = new Padding(20)
+                };
+                _projectsPanel.Controls.Add(lblEmpty);
+            }
+            else
+            {
+                var updatesAvailable = gitProjects.Where(p => p.UpdateAvailable).ToList();
+                var upToDate = gitProjects.Where(p => !p.UpdateAvailable).ToList();
+
+                // Show updates first
+                foreach (var project in updatesAvailable)
+                {
+                    _projectsPanel.Controls.Add(CreateProjectUpdateCard(project));
+                }
+                
+                // Then others
+                foreach (var project in upToDate)
+                {
+                    _projectsPanel.Controls.Add(CreateProjectUpdateCard(project));
+                }
+            }
+
+            _projectsPanel.ResumeLayout();
+        }
+
+        private Panel CreateProjectUpdateCard(ProjectInfo project)
+        {
+            var card = new Panel
+            {
+                Width = 400,
+                Height = 120,
+                BackColor = _cGridHeader,
+                Margin = new Padding(10),
+                Cursor = Cursors.Default
+            };
+
+            // Status Stripe
+            var stripe = new Panel
+            {
+                Width = 5,
+                Dock = DockStyle.Left,
+                BackColor = project.UpdateAvailable ? _cWarning : _cSuccess
+            };
+            card.Controls.Add(stripe);
+
+            // Title
+            var lblName = new Label
+            {
+                Text = project.Name,
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                ForeColor = _cText,
+                AutoSize = true,
+                Location = new Point(15, 15)
+            };
+            card.Controls.Add(lblName);
+
+            // Path
+            var lblPath = new Label
+            {
+                Text = project.Path,
+                Font = new Font("Segoe UI", 8),
+                ForeColor = _cTextDim,
+                AutoEllipsis = true,
+                Width = 370,
+                Location = new Point(15, 40)
+            };
+            card.Controls.Add(lblPath);
+
+            // Version Info
+            var lblVersion = new Label
+            {
+                Text = project.UpdateAvailable 
+                    ? $"Update Available! Local: {ShortHash(project.LocalVersion)} \u2192 Remote: {ShortHash(project.RemoteVersion)}" 
+                    : $"Up to date ({ShortHash(project.LocalVersion)})",
+                ForeColor = project.UpdateAvailable ? _cWarning : _cSuccess,
+                AutoSize = true,
+                Location = new Point(15, 65),
+                Font = new Font("Segoe UI", 9)
+            };
+            card.Controls.Add(lblVersion);
+
+            // Update Button
+            if (project.UpdateAvailable)
+            {
+                var btnUpdate = new ModernButton
+                {
+                    Text = "Update",
+                    IconChar = "\uE74A", // Download/Update icon
+                    BackColor = _cAccent,
+                    Width = 100,
+                    Height = 35,
+                    Location = new Point(285, 75)
+                };
+                btnUpdate.Click += async (s, e) => await UpdateProjectSourceAsync(project);
+                card.Controls.Add(btnUpdate);
+            }
+
+            return card;
+        }
+
+        private string ShortHash(string? hash)
+        {
+            if (string.IsNullOrEmpty(hash)) return "unknown";
+            return hash.Length > 7 ? hash.Substring(0, 7) : hash;
+        }
+
+        private async Task CheckProjectUpdatesAsync()
+        {
+            SetLoading(true);
+            UpdateStatus("Checking for project updates...");
+
+            try
+            {
+                var gitProjects = _allProjects.Where(p => p.IsGitRepo).ToList();
+                int updatesFound = 0;
+
+                foreach (var project in gitProjects)
+                {
+                    UpdateStatus($"Checking {project.Name}...");
+                    
+                    var (updateAvailable, local, remote) = await _gitService.CheckForUpdatesAsync(project.Path);
+                    
+                    project.UpdateAvailable = updateAvailable;
+                    project.LocalVersion = local;
+                    project.RemoteVersion = remote;
+                    project.LastScanned = DateTime.Now;
+
+                    _database?.UpsertProject(project); // Update DB with new git info
+                    
+                    if (updateAvailable) updatesFound++;
+                }
+
+                UpdateStatus($"Check complete. {updatesFound} project updates found.");
+                LoadData(); // Refresh UI
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Error checking project updates: {ex.Message}");
+                AddLog(LogLevel.Error, "Project Update Check Failed", ex.Message);
+            }
+            finally
+            {
+                SetLoading(false);
+            }
+        }
+
+        private async Task UpdateProjectSourceAsync(ProjectInfo project)
+        {
+            SetLoading(true);
+            UpdateStatus($"Updating project {project.Name}...");
+
+            try
+            {
+                var progress = new Progress<string>(msg => UpdateStatus(msg));
+                bool success = await _gitService.PullAsync(project.Path, progress);
+
+                if (success)
+                {
+                    AddLog(LogLevel.Info, "Project Updated", $"{project.Name} updated successfully.");
+                    
+                    // Re-check status to confirm
+                    var (updateAvailable, local, remote) = await _gitService.CheckForUpdatesAsync(project.Path);
+                    project.UpdateAvailable = updateAvailable;
+                    project.LocalVersion = local;
+                    project.RemoteVersion = remote;
+                    _database?.UpsertProject(project);
+
+                    // Re-scan packages since code changed
+                    await AddSingleProjectAsync(project.Path); // Reuse add logic to re-scan
+                }
+                else
+                {
+                    AddLog(LogLevel.Error, "Project Update Failed", $"{project.Name} failed to pull updates.");
+                }
+
+                LoadData();
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"Update failed: {ex.Message}");
+                AddLog(LogLevel.Error, "Project Update Error", ex.Message);
             }
             finally
             {

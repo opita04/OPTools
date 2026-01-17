@@ -41,7 +41,12 @@ namespace OPTools.Core
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     is_group INTEGER DEFAULT 0,
-                    parent_path TEXT
+                    parent_path TEXT,
+                    is_git_repo INTEGER DEFAULT 0,
+                    github_url TEXT,
+                    local_version TEXT,
+                    remote_version TEXT,
+                    update_available INTEGER DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS packages (
@@ -142,14 +147,41 @@ namespace OPTools.Core
                 addParentCmd.ExecuteNonQuery();
             }
             catch { /* Column already exists */ }
+
+            // Migration: Add Git columns
+            try
+            {
+                var gitColumns = new[]
+                {
+                    "ALTER TABLE projects ADD COLUMN is_git_repo INTEGER DEFAULT 0",
+                    "ALTER TABLE projects ADD COLUMN github_url TEXT",
+                    "ALTER TABLE projects ADD COLUMN local_version TEXT",
+                    "ALTER TABLE projects ADD COLUMN remote_version TEXT",
+                    "ALTER TABLE projects ADD COLUMN update_available INTEGER DEFAULT 0"
+                };
+
+                foreach (var sql in gitColumns)
+                {
+                    try
+                    {
+                        using var gitCmd = _connection.CreateCommand();
+                        gitCmd.CommandText = sql;
+                        gitCmd.ExecuteNonQuery();
+                    }
+                    catch { /* Ignore if already exists */ }
+                }
+            }
+            catch { /* General failure handling */ }
         }
 
         public void UpsertProject(ProjectInfo project)
         {
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO projects (name, path, last_scanned, package_count, ecosystem, created_at, updated_at, is_group, parent_path)
-                VALUES (@name, @path, @lastScanned, @packageCount, @ecosystem, @createdAt, @updatedAt, @isGroup, @parentPath)
+                INSERT INTO projects (name, path, last_scanned, package_count, ecosystem, created_at, updated_at, is_group, parent_path, 
+                                      is_git_repo, github_url, local_version, remote_version, update_available)
+                VALUES (@name, @path, @lastScanned, @packageCount, @ecosystem, @createdAt, @updatedAt, @isGroup, @parentPath,
+                        @isGitRepo, @githubUrl, @localVersion, @remoteVersion, @updateAvailable)
                 ON CONFLICT(path) DO UPDATE SET
                     name = @name,
                     last_scanned = @lastScanned,
@@ -157,7 +189,12 @@ namespace OPTools.Core
                     ecosystem = @ecosystem,
                     updated_at = @updatedAt,
                     is_group = @isGroup,
-                    parent_path = @parentPath
+                    parent_path = @parentPath,
+                    is_git_repo = @isGitRepo,
+                    github_url = @githubUrl,
+                    local_version = @localVersion,
+                    remote_version = @remoteVersion,
+                    update_available = @updateAvailable
             ";
             cmd.Parameters.AddWithValue("@name", project.Name);
             cmd.Parameters.AddWithValue("@path", project.Path);
@@ -168,6 +205,11 @@ namespace OPTools.Core
             cmd.Parameters.AddWithValue("@updatedAt", DateTime.Now.ToString("o"));
             cmd.Parameters.AddWithValue("@isGroup", project.IsGroup ? 1 : 0);
             cmd.Parameters.AddWithValue("@parentPath", project.ParentPath ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@isGitRepo", project.IsGitRepo ? 1 : 0);
+            cmd.Parameters.AddWithValue("@githubUrl", project.GitHubUrl ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@localVersion", project.LocalVersion ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@remoteVersion", project.RemoteVersion ?? (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@updateAvailable", project.UpdateAvailable ? 1 : 0);
             cmd.ExecuteNonQuery();
         }
 
@@ -288,6 +330,28 @@ namespace OPTools.Core
                     var ordinalParent = reader.GetOrdinal("parent_path");
                     if (!reader.IsDBNull(ordinalParent))
                         projects[projects.Count - 1].ParentPath = reader.GetString(ordinalParent);
+
+                    // Git fields
+                    var ordinalIsGit = reader.GetOrdinal("is_git_repo");
+                    if (!reader.IsDBNull(ordinalIsGit))
+                        projects[projects.Count - 1].IsGitRepo = reader.GetInt32(ordinalIsGit) == 1;
+
+                    var ordinalUrl = reader.GetOrdinal("github_url");
+                    if (!reader.IsDBNull(ordinalUrl))
+                        projects[projects.Count - 1].GitHubUrl = reader.GetString(ordinalUrl);
+                    
+                    var ordinalLocal = reader.GetOrdinal("local_version");
+                    if (!reader.IsDBNull(ordinalLocal))
+                        projects[projects.Count - 1].LocalVersion = reader.GetString(ordinalLocal);
+                    
+                    var ordinalRemote = reader.GetOrdinal("remote_version");
+                    if (!reader.IsDBNull(ordinalRemote))
+                        projects[projects.Count - 1].RemoteVersion = reader.GetString(ordinalRemote);
+
+                    var ordinalUpdate = reader.GetOrdinal("update_available");
+                    if (!reader.IsDBNull(ordinalUpdate))
+                        projects[projects.Count - 1].UpdateAvailable = reader.GetInt32(ordinalUpdate) == 1;
+
                 } catch {}
             }
             return projects;
