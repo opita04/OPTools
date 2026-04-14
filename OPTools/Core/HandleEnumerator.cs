@@ -257,7 +257,8 @@ public class HandleEnumerator
                     using (var fs = File.Open(tempFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                     {
                         IntPtr myHandle = fs.SafeFileHandle.DangerousGetHandle();
-                        uint myPid = (uint)Process.GetCurrentProcess().Id;
+                        // Optimization: Use P/Invoke to avoid Process object allocation
+                        uint myPid = WindowsApi.GetCurrentProcessId();
                         
                         IntPtr scanPtr = handlePtr;
                         for (uint i = 0; i < handleInfo.HandleCount; i++)
@@ -414,7 +415,8 @@ public class HandleEnumerator
                 return null;
             }
 
-            IntPtr currentProcess = Process.GetCurrentProcess().Handle;
+            // Optimization: Use P/Invoke to avoid Process object allocation in tight loop
+            IntPtr currentProcess = WindowsApi.GetCurrentProcess();
             uint status = WindowsApi.NtDuplicateObject(
                 processHandle,
                 new IntPtr(handle.Handle),

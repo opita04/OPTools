@@ -1,0 +1,3 @@
+## 2025-04-14 - Process.GetCurrentProcess() Allocation Overhead
+**Learning:** In .NET, `Process.GetCurrentProcess()` does not return a cached instance. It allocates a new `System.Diagnostics.Process` object and makes an underlying native API call every time it is invoked. Inside tight loops (like iterating over thousands of system handles during memory/lock enumeration), this leads to excessive GC pressure and CPU overhead.
+**Action:** Always prefer direct P/Invoke calls (`[DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();`) when the process handle or ID is needed inside tight, performance-critical loops in C# code.

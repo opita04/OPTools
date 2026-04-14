@@ -145,7 +145,7 @@ public class FileUnlocker
                 return false;
             }
 
-            IntPtr currentProcess = System.Diagnostics.Process.GetCurrentProcess().Handle;
+            IntPtr currentProcess = WindowsApi.GetCurrentProcess();
 
             uint status = WindowsApi.NtDuplicateObject(
                 processHandle,
