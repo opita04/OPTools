@@ -68,6 +68,14 @@ public static class WindowsApi
         ObjectTypeInformation = 2
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OBJECT_TYPE_INFORMATION
+    {
+        public UNICODE_STRING TypeName;
+        public uint TotalNumberOfObjects;
+        public uint TotalNumberOfHandles;
+    }
+
     // NtDll Functions
     [DllImport("ntdll.dll")]
     public static extern uint NtQuerySystemInformation(
@@ -192,6 +200,7 @@ public static class WindowsApi
     public const string SE_DEBUG_NAME = "SeDebugPrivilege";
     public const string SE_BACKUP_NAME = "SeBackupPrivilege";
     public const string SE_RESTORE_NAME = "SeRestorePrivilege";
+    public const string SE_TAKE_OWNERSHIP_NAME = "SeTakeOwnershipPrivilege";
 
     // Helper method to enable privileges
     public static bool EnablePrivilege(string privilegeName)

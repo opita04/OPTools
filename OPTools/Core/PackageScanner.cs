@@ -339,6 +339,7 @@ namespace OPTools.Core
                 progress?.Report($"Parsing Python: {projectName}");
 
                 var packages = ParsePythonDependencies(projectPath, markerFile);
+                var projectVersion = GetProjectLocalVersion(projectPath, Ecosystem.Python);
 
                 var project = new ProjectInfo
                 {
@@ -349,10 +350,12 @@ namespace OPTools.Core
                     PackageCount = packages.Count,
                     CreatedAt = DateTime.Now,
                     UpdatedAt = DateTime.Now,
-                    IsGitRepo = _gitService.IsGitRepository(projectPath)
+                    IsGitRepo = _gitService.IsGitRepository(projectPath),
+                    LocalVersion = projectVersion
                 };
 
                 result.Projects.Add(project);
+
                 result.Packages.AddRange(packages);
             }
             catch (Exception ex)
@@ -538,6 +541,7 @@ namespace OPTools.Core
                 progress?.Report($"Parsing C++: {projectName}");
 
                 var packages = ParseCppDependencies(projectPath, markerFile);
+                var projectVersion = GetProjectLocalVersion(projectPath, Ecosystem.Cpp);
 
                 var project = new ProjectInfo
                 {
@@ -548,10 +552,12 @@ namespace OPTools.Core
                     PackageCount = packages.Count,
                     CreatedAt = DateTime.Now,
                     UpdatedAt = DateTime.Now,
-                    IsGitRepo = _gitService.IsGitRepository(projectPath)
+                    IsGitRepo = _gitService.IsGitRepository(projectPath),
+                    LocalVersion = projectVersion
                 };
 
                 result.Projects.Add(project);
+
                 result.Packages.AddRange(packages);
             }
             catch (Exception ex)
@@ -653,6 +659,50 @@ namespace OPTools.Core
         /// <summary>
         /// Processes a single NPM project at the given path and adds it to the result.
         /// </summary>
+        /// <summary>
+        /// Attempts to find the project's own version from its metadata files.
+        /// </summary>
+        public string? GetProjectLocalVersion(string projectPath, Ecosystem ecosystem)
+        {
+            try
+            {
+                switch (ecosystem)
+                {
+                    case Ecosystem.NPM:
+                        var packageJsonPath = Path.Combine(projectPath, "package.json");
+                        if (File.Exists(packageJsonPath))
+                        {
+                            var json = JObject.Parse(File.ReadAllText(packageJsonPath));
+                            return json["version"]?.ToString();
+                        }
+                        break;
+
+                    case Ecosystem.Python:
+                        // Check pyproject.toml
+                        var pyprojectPath = Path.Combine(projectPath, "pyproject.toml");
+                        if (File.Exists(pyprojectPath))
+                        {
+                            var content = File.ReadAllText(pyprojectPath);
+                            // Simple regex for [project] version = "..." or [tool.poetry] version = "..."
+                            var match = System.Text.RegularExpressions.Regex.Match(content, @"(?:\[project\]|\[tool\.poetry\]).*?version\s*=\s*""([^""]+)""", System.Text.RegularExpressions.RegexOptions.Singleline);
+                            if (match.Success) return match.Value;
+                            
+                            // Try line by line if block match failed
+                            foreach (var line in content.Split('\n'))
+                            {
+                                if (line.Trim().StartsWith("version ="))
+                                {
+                                    return line.Split('=')[1].Trim().Trim('"');
+                                }
+                            }
+                        }
+                        break;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         private void ProcessNpmProjectAtPath(string packageJsonPath, string projectPath, PackageScanResult result, IProgress<string>? progress)
         {
             try
@@ -662,6 +712,15 @@ namespace OPTools.Core
                 
                 var packages = ParsePackageJson(packageJsonPath, projectPath);
                 
+                // Read project version from package.json
+                string? projectVersion = null;
+                try
+                {
+                    var json = JObject.Parse(File.ReadAllText(packageJsonPath));
+                    projectVersion = json["version"]?.ToString();
+                }
+                catch { }
+
                 if (packages.Count > 0 || _gitService.IsGitRepository(projectPath))
                 {
                     var project = new ProjectInfo
@@ -673,8 +732,10 @@ namespace OPTools.Core
                         PackageCount = packages.Count,
                         CreatedAt = DateTime.Now,
                         UpdatedAt = DateTime.Now,
-                        IsGitRepo = _gitService.IsGitRepository(projectPath)
+                        IsGitRepo = _gitService.IsGitRepository(projectPath),
+                        LocalVersion = projectVersion // Store the version found in package.json
                     };
+
 
                     if (project.IsGitRepo)
                     {

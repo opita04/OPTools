@@ -1,0 +1,28 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="cleanerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#37474f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#263238;stop-opacity:1" />
+    </linearGradient>
+    <filter id="greenGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Broom Handle -->
+  <rect x="28" y="8" width="8" height="48" rx="2" ry="2" fill="url(#cleanerGrad)" stroke="#546e7a" stroke-width="2"/>
+  
+  <!-- Broom Bristles -->
+  <rect x="16" y="52" width="32" height="8" rx="2" ry="2" fill="url(#cleanerGrad)" stroke="#546e7a" stroke-width="2"/>
+  
+  <!-- Sparkles (cleaning effect) -->
+  <path d="M12 20 L16 24 L12 28" stroke="#4caf50" stroke-width="2" stroke-linecap="round" fill="none" filter="url(#greenGlow)"/>
+  <path d="M52 16 L48 20 L52 24" stroke="#4caf50" stroke-width="2" stroke-linecap="round" fill="none" filter="url(#greenGlow)"/>
+  <path d="M56 32 L52 36 L56 40" stroke="#4caf50" stroke-width="2" stroke-linecap="round" fill="none" filter="url(#greenGlow)"/>
+  <circle cx="20" cy="12" r="2" fill="#4caf50" filter="url(#greenGlow)"/>
+  <circle cx="52" cy="48" r="2" fill="#4caf50" filter="url(#greenGlow)"/>
+</svg>

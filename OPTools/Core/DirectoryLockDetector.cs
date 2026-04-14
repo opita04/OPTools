@@ -115,6 +115,8 @@ public class DirectoryLockDetector
                         {
                             ProcessId = pid,
                             ProcessName = name ?? "Unknown",
+                            ProcessPath = execPath ?? string.Empty,
+                            IsSystemProcess = ProcessManager.IsSystemProcess(pid),
                             Handle = IntPtr.Zero,
                             FilePath = _targetPath,
                             HandleType = "WorkingDir"
@@ -163,6 +165,8 @@ public class DirectoryLockDetector
                             {
                                 ProcessId = (uint)process.Id,
                                 ProcessName = process.ProcessName,
+                                ProcessPath = process.MainModule?.FileName ?? string.Empty,
+                                IsSystemProcess = ProcessManager.IsSystemProcess((uint)process.Id),
                                 Handle = IntPtr.Zero,
                                 FilePath = cwd,
                                 HandleType = "CurrentDir"

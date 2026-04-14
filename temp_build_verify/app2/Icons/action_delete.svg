@@ -1,0 +1,19 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="deleteGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#d9534f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c62828;stop-opacity:1" />
+    </linearGradient>
+    <filter id="deleteGlow">
+      <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- X Mark -->
+  <line x1="6" y1="6" x2="18" y2="18" stroke="url(#deleteGrad)" stroke-width="3" stroke-linecap="round" filter="url(#deleteGlow)"/>
+  <line x1="18" y1="6" x2="6" y2="18" stroke="url(#deleteGrad)" stroke-width="3" stroke-linecap="round" filter="url(#deleteGlow)"/>
+</svg>

@@ -54,7 +54,7 @@ public static class ContextMenuInstaller
                     {
                         if (commandKey != null)
                         {
-                            commandKey.SetValue("", $"\"{exePath}\" \"%1\"");
+                            commandKey.SetValue("", $"\"{exePath}\" /S \"%1\"");
                         }
                     }
                 }
@@ -71,7 +71,7 @@ public static class ContextMenuInstaller
                     {
                         if (commandKey != null)
                         {
-                            commandKey.SetValue("", $"\"{exePath}\" \"%1\"");
+                            commandKey.SetValue("", $"\"{exePath}\" /S \"%1\"");
                         }
                     }
                 }

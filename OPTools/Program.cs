@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Principal;
@@ -159,45 +160,74 @@ internal static class Program
         // Tier 1 Audit Fix: Block system paths in silent mode
         if (OPTools.Utils.PathHelper.IsDangerousPath(targetPath))
         {
-            // Exit with error code 2 (Access Denied / Protected)
+            OPTools.Utils.AuditLogger.LogOperation("SILENT_BLOCKED", $"Dangerous path: {targetPath}", false);
             Environment.Exit(2);
             return;
         }
 
+        OPTools.Utils.AuditLogger.LogOperation("SILENT_DELETE_START", targetPath, true);
+
         try
         {
-            FileUnlocker unlocker = new FileUnlocker(targetPath);
-            
-            UnlockResult result = unlocker.UnlockAll(true);
+            UnlockWorkflow workflow = new UnlockWorkflow(targetPath);
+            UnlockWorkflowResult result = workflow.Delete(autoScheduleOnReboot: true);
 
-            if (!result.Success)
+            if (result.Success)
             {
-                result = unlocker.UnlockAll(true);
+                OPTools.Utils.AuditLogger.LogOperation("SILENT_DELETE_OK", targetPath, true);
+                Environment.Exit(0);
+                return;
             }
 
-            System.Threading.Thread.Sleep(200);
+            string failureCategory = GetSilentFailureCategory(result);
+            string details = result.Errors.Count > 0
+                ? string.Join("; ", result.Errors)
+                : failureCategory;
 
-            try
+            OPTools.Utils.AuditLogger.LogOperation(
+                $"SILENT_DELETE_FAIL_{failureCategory.ToUpperInvariant()}",
+                $"{targetPath}: {details}",
+                false);
+
+            if (result.ScheduledOnReboot)
             {
-                unlocker.DeleteFileOrFolder();
+                OPTools.Utils.AuditLogger.LogOperation("SILENT_SCHEDULED_REBOOT", targetPath, true);
             }
-            catch
-            {
-                Environment.Exit(1);
-            }
-        }
-        catch
-        {
+
             Environment.Exit(1);
         }
+        catch (Exception ex)
+        {
+            OPTools.Utils.AuditLogger.LogOperation("SILENT_ERROR", $"{targetPath}: {ex.Message}", false);
+            Environment.Exit(1);
+        }
+    }
+
+    private static string GetSilentFailureCategory(UnlockWorkflowResult result)
+    {
+        if (result.RemainingLocks.Any(lockInfo => lockInfo.IsSystemProcess))
+        {
+            return "system_safeguard";
+        }
+
+        if (result.PermissionRepairAttempted || result.Diagnostics is { HasDeletePermission: false })
+        {
+            return "permission";
+        }
+
+        if (result.RemainingLocks.Count > 0)
+        {
+            return "locks";
+        }
+
+        return "general";
     }
 
     private static void InstallContextMenu()
     {
         if (!IsRunningAsAdministrator())
         {
-            MessageBox.Show("Administrator privileges are required to install the context menu.",
-                "Elevation Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            RelaunchAsAdministrator("/INSTALL");
             return;
         }
 
@@ -225,8 +255,7 @@ internal static class Program
     {
         if (!IsRunningAsAdministrator())
         {
-            MessageBox.Show("Administrator privileges are required to uninstall the context menu.",
-                "Elevation Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            RelaunchAsAdministrator("/UNINSTALL");
             return;
         }
 
@@ -284,6 +313,38 @@ If no path is specified, the GUI will open without a target.";
         catch
         {
             return false;
+        }
+    }
+
+    private static void RelaunchAsAdministrator(string arguments)
+    {
+        string? processPath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(processPath) || !File.Exists(processPath))
+        {
+            MessageBox.Show("Unable to locate the OPTools executable for elevation.",
+                "Elevation Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = processPath,
+                Arguments = arguments,
+                UseShellExecute = true,
+                Verb = "runas"
+            });
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            MessageBox.Show("Administrator approval was cancelled.",
+                "Elevation Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Unable to restart OPTools as administrator: {ex.Message}",
+                "Elevation Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

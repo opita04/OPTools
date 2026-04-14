@@ -69,6 +69,8 @@ public class MemoryMappedDetector
                             {
                                 ProcessId = handle.ProcessId,
                                 ProcessName = processName,
+                                ProcessPath = ProcessManager.GetProcessPath(handle.ProcessId),
+                                IsSystemProcess = ProcessManager.IsSystemProcess(handle.ProcessId),
                                 Handle = new IntPtr(handle.Handle),
                                 FilePath = filePath,
                                 HandleType = "MemoryMapped"

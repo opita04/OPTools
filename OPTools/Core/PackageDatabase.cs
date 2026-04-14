@@ -352,6 +352,19 @@ namespace OPTools.Core
                     if (!reader.IsDBNull(ordinalUpdate))
                         projects[projects.Count - 1].UpdateAvailable = reader.GetInt32(ordinalUpdate) == 1;
 
+                    // Project Registry fields
+                    var ordinalStrategy = reader.GetOrdinal("version_strategy");
+                    if (!reader.IsDBNull(ordinalStrategy))
+                        projects[projects.Count - 1].VersionStrategy = (VersionStrategy)reader.GetInt32(ordinalStrategy);
+
+                    var ordinalBranch = reader.GetOrdinal("default_branch");
+                    if (!reader.IsDBNull(ordinalBranch))
+                        projects[projects.Count - 1].DefaultBranch = reader.GetString(ordinalBranch);
+                        
+                    var ordinalLastChecked = reader.GetOrdinal("last_checked_at");
+                    if (!reader.IsDBNull(ordinalLastChecked))
+                        projects[projects.Count - 1].LastCheckedAt = DateTime.Parse(reader.GetString(ordinalLastChecked));
+
                 } catch {}
             }
             return projects;
@@ -468,6 +481,61 @@ namespace OPTools.Core
             cmd2.CommandText = "DELETE FROM projects";
             cmd2.ExecuteNonQuery();
         }
+
+        /// <summary>
+        /// Clears only global packages and global projects
+        /// </summary>
+        public void ClearGlobalData()
+        {
+            using var transaction = _connection.BeginTransaction();
+            try
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.Transaction = transaction;
+                cmd.CommandText = "DELETE FROM packages WHERE project_path LIKE '__GLOBAL%'";
+                cmd.ExecuteNonQuery();
+
+                using var cmd2 = _connection.CreateCommand();
+                cmd2.Transaction = transaction;
+                cmd2.CommandText = "DELETE FROM projects WHERE path LIKE '__GLOBAL%'";
+                cmd2.ExecuteNonQuery();
+
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Clears only local projects and their packages
+        /// </summary>
+        public void ClearLocalData()
+        {
+            using var transaction = _connection.BeginTransaction();
+            try
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.Transaction = transaction;
+                cmd.CommandText = "DELETE FROM packages WHERE project_path NOT LIKE '__GLOBAL%'";
+                cmd.ExecuteNonQuery();
+
+                using var cmd2 = _connection.CreateCommand();
+                cmd2.Transaction = transaction;
+                cmd2.CommandText = "DELETE FROM projects WHERE path NOT LIKE '__GLOBAL%'";
+                cmd2.ExecuteNonQuery();
+
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+
 
         private void UpdateProjectPackageCount(string projectPath)
         {

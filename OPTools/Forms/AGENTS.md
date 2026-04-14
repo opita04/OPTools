@@ -1,7 +1,7 @@
 # Forms - UI Panels and Dialogs
 
 **Purpose:** WinForms UI components with custom modern styling
-**Files:** 6 (4,678 lines)
+**Files:** 5+
 
 ## OVERVIEW
 Panel-based UI components for OPTools features. Uses custom dark theme.
@@ -9,7 +9,6 @@ Panel-based UI components for OPTools features. Uses custom dark theme.
 ## STRUCTURE
 ```
 Forms/
-├── PackageHandlerPanel.cs      # Package manager UI (1970 lines)
 ├── BackupSchedulerPanel.cs     # Backup scheduling UI (889 lines)
 ├── ContextMenuManagerPanel.cs   # Context menu management UI (671 lines)
 ├── PackageDetailsPanel.cs      # Package details dialog
@@ -20,7 +19,6 @@ Forms/
 ## WHERE TO LOOK
 | Task | File | Notes |
 |------|------|-------|
-| Package list UI | `PackageHandlerPanel.cs` | ListView + search/filter |
 | Backup scheduling | `BackupSchedulerPanel.cs` | Scheduler UI |
 | Context menu config | `ContextMenuManagerPanel.cs` | Registry-based menu management |
 | Package details | `PackageDetailsPanel.cs` | Detail view for packages |
@@ -52,7 +50,6 @@ private Label _lblStatus = null!;
 ```
 
 ## ANTI-PATTERNS
-- **Large files**: PackageHandlerPanel.cs at 1970 lines - extract sub-components
 - **Inline UI construction**: Consider InitializeComponent pattern for complex panels
 
 ## NOTES

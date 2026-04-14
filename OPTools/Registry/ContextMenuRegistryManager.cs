@@ -94,27 +94,57 @@ public class ContextMenuRegistryManager
                 // Only return if we have a valid command path
                 if (!string.IsNullOrEmpty(commandPath))
                 {
-                    // Extract just the executable path (remove "%1" parameter if present)
-                    commandPath = commandPath.Trim('"');
-                    if (commandPath.EndsWith(" \"%1\""))
+                    // Logic to determine if it's a "Standard" command (EXE "%1") or "Custom"
+                    string workingPath = commandPath;
+
+                    // 1. Check for standard suffixes " \"%1\"" or " %1"
+                    if (workingPath.EndsWith(" \"%1\""))
                     {
-                        commandPath = commandPath.Substring(0, commandPath.Length - 5);
+                        workingPath = workingPath.Substring(0, workingPath.Length - 5);
                     }
-                    else if (commandPath.EndsWith(" %1"))
+                    else if (workingPath.EndsWith(" %1"))
                     {
-                        commandPath = commandPath.Substring(0, commandPath.Length - 3);
+                        workingPath = workingPath.Substring(0, workingPath.Length - 3);
                     }
-                    commandPath = commandPath.Trim('"');
+
+                    // 2. Extract executable from the prefix part
+                    string exePath = ExtractExecutablePath(workingPath);
+
+                    // 3. Compare prefix vs exe. If they differ significantly (other than quotes),
+                    //    it means there are arguments (like /S), so it's a Custom Command.
                     
-                    return new ContextMenuEntry
+                    // Normalize both for comparison
+                    string normWorking = workingPath.Trim().Trim('"');
+                    string normExe = exePath.Trim().Trim('"');
+
+                    bool isCustom = !string.Equals(normWorking, normExe, StringComparison.OrdinalIgnoreCase);
+
+                    if (isCustom)
                     {
-                        Name = entryName,
-                        DisplayName = displayName,
-                        Command = commandPath,
-                        MenuType = menuType,
-                        RegistryPath = entryKeyPath,
-                        IconPath = iconPath
-                    };
+                        // Custom command: Return full string including suffix if present (so we don't break existing args)
+                        return new ContextMenuEntry
+                        {
+                            Name = entryName,
+                            DisplayName = displayName,
+                            Command = commandPath, // Return original full command
+                            MenuType = menuType,
+                            RegistryPath = entryKeyPath,
+                            IconPath = iconPath
+                        };
+                    }
+                    else
+                    {
+                        // Standard command: Return clean exe path (no quotes, no suffix)
+                        return new ContextMenuEntry
+                        {
+                            Name = entryName,
+                            DisplayName = displayName,
+                            Command = normExe, // Return clean exe path
+                            MenuType = menuType,
+                            RegistryPath = entryKeyPath,
+                            IconPath = iconPath
+                        };
+                    }
                 }
             }
         }
@@ -136,7 +166,11 @@ public class ContextMenuRegistryManager
         
         // Extract executable path for validation (handles full commands with arguments)
         string executablePath = ExtractExecutablePath(appPath);
-        bool isCustomCommand = appPath.Trim() != executablePath; // Has arguments
+        
+        // Fix: Don't treat simple quoted paths as custom commands
+        string normApp = appPath.Trim().Trim('"');
+        string normExe = executablePath.Trim().Trim('"');
+        bool isCustomCommand = !string.Equals(normApp, normExe, StringComparison.OrdinalIgnoreCase);
         
         if (!File.Exists(executablePath))
         {
@@ -262,7 +296,11 @@ public class ContextMenuRegistryManager
             
             // Extract executable path for validation (handles full commands with arguments)
             string executablePath = ExtractExecutablePath(newAppPath);
-            bool isCustomCommand = newAppPath.Trim() != executablePath; // Has arguments
+            
+            // Fix: Don't treat simple quoted paths as custom commands
+            string normApp = newAppPath.Trim().Trim('"');
+            string normExe = executablePath.Trim().Trim('"');
+            bool isCustomCommand = !string.Equals(normApp, normExe, StringComparison.OrdinalIgnoreCase);
             
             if (!File.Exists(executablePath))
             {
@@ -505,4 +543,3 @@ public class ContextMenuEntry
     public string RegistryPath { get; set; } = string.Empty;
     public string? IconPath { get; set; }  // Optional icon path (.ico or .exe)
 }
-

@@ -13,6 +13,8 @@ public class LockInfo
 {
     public uint ProcessId { get; set; }
     public string ProcessName { get; set; } = string.Empty;
+    public string ProcessPath { get; set; } = string.Empty;
+    public bool IsSystemProcess { get; set; }
     public IntPtr Handle { get; set; }
     public string FilePath { get; set; } = string.Empty;
     public string HandleType { get; set; } = string.Empty;
@@ -27,6 +29,7 @@ public class HandleEnumerator
     private const uint BUFFER_INCREMENT = 0x1000;
     private const uint OBJECT_NAME_BUFFER_SIZE = 0x1000;
     private const int MAX_BUFFER_RETRIES = 5;
+    private static byte? _fileTypeIndex;
 
     public HandleEnumerator(string targetPath)
     {
@@ -34,7 +37,7 @@ public class HandleEnumerator
         _isDirectory = Directory.Exists(_targetPath);
     }
 
-    public List<LockInfo> EnumerateLocks()
+    public List<LockInfo> EnumerateLocks(IProgress<string>? progress = null)
     {
         List<LockInfo> locks = new List<LockInfo>();
 
@@ -50,6 +53,7 @@ public class HandleEnumerator
         // Step 1: Try Restart Manager API first (fast, covers most user-mode locks)
         try
         {
+            progress?.Report("Scanning with Restart Manager...");
             List<string> filesToCheck = new List<string>();
 
             if (_isDirectory)
@@ -82,7 +86,7 @@ public class HandleEnumerator
         // Step 2: ALWAYS supplement with legacy handle enumeration to catch locks RM misses
         try
         {
-            var legacyLocks = EnumerateLocksLegacy();
+            var legacyLocks = EnumerateLocksLegacy(progress);
             locks.AddRange(legacyLocks);
         }
         catch (Exception ex)
@@ -93,6 +97,7 @@ public class HandleEnumerator
         // Step 3: Check for memory-mapped file locks (Section objects)
         try
         {
+            progress?.Report("Checking memory mapped files...");
             var mmDetector = new MemoryMappedDetector(_targetPath);
             var mmLocks = mmDetector.DetectMemoryMappedLocks();
             locks.AddRange(mmLocks);
@@ -107,6 +112,7 @@ public class HandleEnumerator
         {
             try
             {
+                progress?.Report("Checking directory handles...");
                 var dirDetector = new DirectoryLockDetector(_targetPath);
                 var dirLocks = dirDetector.DetectDirectoryLocks();
                 locks.AddRange(dirLocks);
@@ -167,6 +173,8 @@ public class HandleEnumerator
                             {
                                 ProcessId = (uint)processInfo[i].Process.dwProcessId,
                                 ProcessName = processInfo[i].strAppName,
+                                ProcessPath = ProcessManager.GetProcessPath((uint)processInfo[i].Process.dwProcessId),
+                                IsSystemProcess = ProcessManager.IsSystemProcess((uint)processInfo[i].Process.dwProcessId),
                                 Handle = IntPtr.Zero,
                                 FilePath = filePath,
                                 HandleType = processInfo[i].ApplicationType.ToString()
@@ -185,7 +193,7 @@ public class HandleEnumerator
         return locks;
     }
 
-    private List<LockInfo> EnumerateLocksLegacy()
+    private List<LockInfo> EnumerateLocksLegacy(IProgress<string>? progress = null)
     {
         List<LockInfo> locks = new List<LockInfo>();
 
@@ -197,6 +205,7 @@ public class HandleEnumerator
 
         try
         {
+            progress?.Report("Querying system handles...");
             int retryCount = 0;
             while (retryCount < MAX_BUFFER_RETRIES)
             {
@@ -237,9 +246,55 @@ public class HandleEnumerator
             WindowsApi.SYSTEM_HANDLE_INFORMATION handleInfo = Marshal.PtrToStructure<WindowsApi.SYSTEM_HANDLE_INFORMATION>(buffer);
             IntPtr handlePtr = new IntPtr(buffer.ToInt64() + Marshal.SizeOf(typeof(uint)));
 
+            // Optimization: Calibrate file type index if not yet known
+            if (!_fileTypeIndex.HasValue)
+            {
+                try 
+                {
+                    // Open a known file (our own executable) to find its handle in the list
+                    // Use a temp file to be sure we have a unique handle
+                    string tempFile = Path.GetTempFileName();
+                    using (var fs = File.Open(tempFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                    {
+                        IntPtr myHandle = fs.SafeFileHandle.DangerousGetHandle();
+                        uint myPid = (uint)Process.GetCurrentProcess().Id;
+                        
+                        IntPtr scanPtr = handlePtr;
+                        for (uint i = 0; i < handleInfo.HandleCount; i++)
+                        {
+                            WindowsApi.SYSTEM_HANDLE h = Marshal.PtrToStructure<WindowsApi.SYSTEM_HANDLE>(scanPtr);
+                            if (h.ProcessId == myPid && h.Handle == (ushort)myHandle.ToInt64())
+                            {
+                                _fileTypeIndex = h.ObjectTypeNumber;
+                                System.Diagnostics.Debug.WriteLine($"Calibrated File Object Type Index: {_fileTypeIndex}");
+                                break;
+                            }
+                            scanPtr = new IntPtr(scanPtr.ToInt64() + Marshal.SizeOf(typeof(WindowsApi.SYSTEM_HANDLE)));
+                        }
+                    }
+                    try { File.Delete(tempFile); } catch { }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to calibrate file type index: {ex.Message}");
+                }
+            }
+
             for (uint i = 0; i < handleInfo.HandleCount; i++)
             {
+                if (progress != null && i % 1000 == 0)
+                {
+                    progress.Report($"Scanning handle {i}/{handleInfo.HandleCount}...");
+                }
+
                 WindowsApi.SYSTEM_HANDLE handle = Marshal.PtrToStructure<WindowsApi.SYSTEM_HANDLE>(handlePtr);
+
+                // Optimization: Filter by object type if known
+                if (_fileTypeIndex.HasValue && handle.ObjectTypeNumber != _fileTypeIndex.Value)
+                {
+                     handlePtr = new IntPtr(handlePtr.ToInt64() + Marshal.SizeOf(typeof(WindowsApi.SYSTEM_HANDLE)));
+                     continue;
+                }
 
                 try
                 {
@@ -253,6 +308,8 @@ public class HandleEnumerator
                             {
                                 ProcessId = handle.ProcessId,
                                 ProcessName = processName,
+                                ProcessPath = ProcessManager.GetProcessPath(handle.ProcessId),
+                                IsSystemProcess = ProcessManager.IsSystemProcess(handle.ProcessId),
                                 Handle = new IntPtr(handle.Handle),
                                 FilePath = filePath,
                                 HandleType = "File"
@@ -305,6 +362,41 @@ public class HandleEnumerator
         }
     }
 
+    private bool IsFileHandle(IntPtr handle)
+    {
+        uint bufferSize = 0x1000;
+        IntPtr buffer = IntPtr.Zero;
+        try 
+        {
+            buffer = Marshal.AllocHGlobal((int)bufferSize);
+            uint returnLength = 0;
+            uint status = WindowsApi.NtQueryObject(
+                handle,
+                WindowsApi.OBJECT_INFORMATION_CLASS.ObjectTypeInformation,
+                buffer,
+                bufferSize,
+                out returnLength);
+
+            if (status == 0)
+            {
+                var typeInfo = Marshal.PtrToStructure<WindowsApi.OBJECT_TYPE_INFORMATION>(buffer);
+                if (typeInfo.TypeName.Length > 0 && typeInfo.TypeName.Buffer != IntPtr.Zero)
+                {
+                    byte[] bytes = new byte[typeInfo.TypeName.Length];
+                    Marshal.Copy(typeInfo.TypeName.Buffer, bytes, 0, (int)typeInfo.TypeName.Length);
+                    string typeName = Encoding.Unicode.GetString(bytes);
+                    return typeName.Equals("File", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
+        catch { }
+        finally
+        {
+            if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+        }
+        return false;
+    }
+
     private string? GetFilePathFromHandle(WindowsApi.SYSTEM_HANDLE handle)
     {
         IntPtr processHandle = IntPtr.Zero;
@@ -333,6 +425,11 @@ public class HandleEnumerator
                 WindowsApi.DUPLICATE_SAME_ACCESS);
 
             if (status != 0 || duplicateHandle == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            if (!IsFileHandle(duplicateHandle))
             {
                 return null;
             }

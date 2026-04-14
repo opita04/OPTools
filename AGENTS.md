@@ -60,11 +60,9 @@ OPTools/
 ## COMMANDS
 
 ```bash
-# Build
-dotnet build -c Release
-
-# Publish (self-contained)
-dotnet publish -c Release -r win-x64 --self-contained true
+# CLEAN & BUILD (STRICT RELEASE MODE)
+# Always nuke bin/obj and build in Release to ensure consistency
+rm -rf **/bin **/obj && dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true && dotnet build -c Release
 
 # Run tests
 dotnet test

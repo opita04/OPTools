@@ -11,9 +11,13 @@ public class ModernButton : Button
     public int BorderRadius { get; set; } = 20;
     public Color CornerBackColor { get; set; } = Color.FromArgb(30, 30, 30); // Default to App Background
     public Color HoverColor { get; set; } = Color.Empty;
+    public Color PressedColor { get; set; } = Color.Empty;
+    public Color BorderColor { get; set; } = Color.FromArgb(60, 60, 60);
+    public int BorderSize { get; set; } = 1;
     public int ImagePadding { get; set; } = 0; // Padding around icon for smaller buttons
     
     private Color _originalBackColor;
+    private bool _isPressed = false;
 
     public ModernButton()
     {
@@ -25,6 +29,20 @@ public class ModernButton : Button
         this.ForeColor = Color.White;
     }
 
+    protected override void OnMouseDown(MouseEventArgs mevent)
+    {
+        base.OnMouseDown(mevent);
+        _isPressed = true;
+        this.Invalidate();
+    }
+
+    protected override void OnMouseUp(MouseEventArgs mevent)
+    {
+        base.OnMouseUp(mevent);
+        _isPressed = false;
+        this.Invalidate();
+    }
+
     protected override void OnMouseEnter(EventArgs e)
     {
         base.OnMouseEnter(e);
@@ -32,13 +50,14 @@ public class ModernButton : Button
         if (HoverColor != Color.Empty)
             this.BackColor = HoverColor;
         else
-            this.BackColor = ControlPaint.Light(this.BackColor, 0.1f);
+            this.BackColor = ControlPaint.Light(this.BackColor, 0.15f);
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         base.OnMouseLeave(e);
         this.BackColor = _originalBackColor;
+        _isPressed = false;
     }
 
     protected override void OnPaint(PaintEventArgs pevent)
@@ -53,11 +72,35 @@ public class ModernButton : Button
             graphics.FillRectangle(brush, this.ClientRectangle);
         }
 
-        // Draw rounded background
+        // Draw rounded background with gradient
+        Rectangle rect = this.ClientRectangle;
+        rect.Inflate(-BorderSize, -BorderSize);
+        
         using (var path = GetRoundedPath(this.ClientRectangle, BorderRadius))
-        using (var brush = new SolidBrush(this.BackColor))
         {
-            graphics.FillPath(brush, path);
+            Color baseColor = this.BackColor;
+            if (_isPressed)
+            {
+                baseColor = PressedColor != Color.Empty ? PressedColor : ControlPaint.Dark(baseColor, 0.1f);
+            }
+
+            // Create a subtle gradient
+            Color colorTop = ControlPaint.Light(baseColor, 0.05f);
+            Color colorBottom = ControlPaint.Dark(baseColor, 0.05f);
+
+            using (var brush = new LinearGradientBrush(this.ClientRectangle, colorTop, colorBottom, LinearGradientMode.Vertical))
+            {
+                graphics.FillPath(brush, path);
+            }
+
+            // Draw border
+            if (BorderSize > 0)
+            {
+                using (var pen = new Pen(BorderColor, BorderSize))
+                {
+                    graphics.DrawPath(pen, path);
+                }
+            }
         }
 
         // Draw Icon/Image

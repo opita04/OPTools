@@ -76,6 +76,16 @@ namespace OPTools.Core
     }
 
     /// <summary>
+    /// Strategy used for version detection
+    /// </summary>
+    public enum VersionStrategy
+    {
+        Tag,
+        Commit,
+        File
+    }
+
+    /// <summary>
     /// Represents a project containing packages
     /// </summary>
     public class ProjectInfo
@@ -107,6 +117,11 @@ namespace OPTools.Core
         public string? LocalVersion { get; set; } // Current Commit Hash or Tag
         public string? RemoteVersion { get; set; } // Remote Commit Hash or Tag
         public bool UpdateAvailable { get; set; }
+        
+        // New fields for Project Registry
+        public VersionStrategy VersionStrategy { get; set; } = VersionStrategy.Tag;
+        public string DefaultBranch { get; set; } = "main";
+        public DateTime? LastCheckedAt { get; set; }
     }
 
     /// <summary>

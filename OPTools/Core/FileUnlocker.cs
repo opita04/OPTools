@@ -33,7 +33,7 @@ public class FileUnlocker
         _enumerator = new HandleEnumerator(_targetPath);
     }
 
-    private static bool IsReservedFileName(string fileName)
+    public static bool IsReservedFileName(string fileName)
     {
         if (string.IsNullOrEmpty(fileName))
             return false;
@@ -42,25 +42,30 @@ public class FileUnlocker
         return ReservedNames.Contains(nameWithoutExtension);
     }
 
-    private static bool DeleteReservedFile(string filePath)
+    public static bool DeleteReservedFile(string filePath)
     {
-        try
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            // Use extended-length path prefix to bypass Win32 reserved name parsing
-            string extendedPath = @"\\?\" + Path.GetFullPath(filePath);
-            File.SetAttributes(extendedPath, FileAttributes.Normal);
-            File.Delete(extendedPath);
-            System.Diagnostics.Debug.WriteLine($"Deleted reserved file: {filePath}");
-            return true;
+            try
+            {
+                // Use extended-length path prefix to bypass Win32 reserved name parsing
+                string extendedPath = @"\\?\" + Path.GetFullPath(filePath);
+                File.SetAttributes(extendedPath, FileAttributes.Normal);
+                File.Delete(extendedPath);
+                System.Diagnostics.Debug.WriteLine($"Deleted reserved file: {filePath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Attempt {attempt + 1} failed to delete reserved file {filePath}: {ex.Message}");
+                if (attempt == 0)
+                    Thread.Sleep(100);
+            }
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to delete reserved file {filePath}: {ex.Message}");
-            return false;
-        }
+        return false;
     }
 
-    public UnlockResult UnlockAll(bool killProcesses = false)
+    public UnlockResult UnlockAll(bool killProcesses = false, IProgress<string>? progress = null)
     {
         UnlockResult result = new UnlockResult();
 
@@ -73,7 +78,7 @@ public class FileUnlocker
         WindowsApi.EnablePrivilege(WindowsApi.SE_DEBUG_NAME);
         WindowsApi.EnablePrivilege(WindowsApi.SE_BACKUP_NAME);
 
-        List<LockInfo> locks = _enumerator.EnumerateLocks();
+        List<LockInfo> locks = _enumerator.EnumerateLocks(progress);
 
         if (locks.Count == 0)
         {
@@ -112,7 +117,7 @@ public class FileUnlocker
 
         Thread.Sleep(100);
 
-        List<LockInfo> remainingLocks = _enumerator.EnumerateLocks();
+        List<LockInfo> remainingLocks = _enumerator.EnumerateLocks(progress);
         result.Success = remainingLocks.Count == 0;
 
         if (!result.Success && result.Errors.Count == 0)
@@ -200,25 +205,7 @@ public class FileUnlocker
 
         try
         {
-            if (File.Exists(_targetPath))
-            {
-                // Check if it's a reserved filename and use special deletion method
-                if (IsReservedFileName(Path.GetFileName(_targetPath)))
-                {
-                    DeleteReservedFile(_targetPath);
-                }
-                else
-                {
-                    File.SetAttributes(_targetPath, FileAttributes.Normal);
-                    File.Delete(_targetPath);
-                }
-                AuditLogger.LogDelete(_targetPath, true);
-            }
-            else if (Directory.Exists(_targetPath))
-            {
-                DeleteDirectoryRecursive(_targetPath);
-                AuditLogger.LogDelete(_targetPath, true);
-            }
+            DeleteFileOrFolderCore();
         }
         catch (Exception ex)
         {
@@ -303,26 +290,7 @@ public class FileUnlocker
 
         try
         {
-            if (File.Exists(_targetPath))
-            {
-                string destFile = Path.Combine(destinationPath, Path.GetFileName(_targetPath));
-                if (File.Exists(destFile))
-                {
-                     File.Delete(destFile);
-                }
-                File.Move(_targetPath, destFile);
-            }
-            else if (Directory.Exists(_targetPath))
-            {
-                string destDir = Path.Combine(destinationPath, new DirectoryInfo(_targetPath).Name);
-                if (Directory.Exists(destDir))
-                {
-                    // If destination directory exists, we might need to merge or fail.
-                    // For simplicity, let's try to move.
-                }
-                Directory.Move(_targetPath, destDir);
-            }
-            AuditLogger.LogOperation("MOVE", $"{_targetPath} -> {destinationPath}", true);
+            MoveFileOrFolderCore(destinationPath);
         }
         catch (Exception ex)
         {
@@ -369,11 +337,32 @@ public class FileUnlocker
                 }
             }
 
-            // Delete remaining normal files
+            // Delete remaining normal files (skip reserved — already handled above)
             foreach (FileInfo file in directory.GetFiles())
             {
-                file.Attributes = FileAttributes.Normal;
-                file.Delete();
+                if (IsReservedFileName(file.Name))
+                    continue;
+
+                try
+                {
+                    file.Attributes = FileAttributes.Normal;
+                    file.Delete();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to delete file {file.FullName}: {ex.Message}");
+                    // Try extended-length path as fallback
+                    try
+                    {
+                        string extendedPath = @"\\?\" + file.FullName;
+                        File.SetAttributes(extendedPath, FileAttributes.Normal);
+                        File.Delete(extendedPath);
+                    }
+                    catch
+                    {
+                        throw; // Re-throw the original exception
+                    }
+                }
             }
 
             // Recursively delete subdirectories
@@ -504,9 +493,55 @@ public class FileUnlocker
         return success;
     }
 
-    public List<LockInfo> GetLocks()
+    public List<LockInfo> GetLocks(IProgress<string>? progress = null)
     {
-        return _enumerator.EnumerateLocks();
+        return _enumerator.EnumerateLocks(progress);
+    }
+
+    internal void DeleteFileOrFolderCore()
+    {
+        if (File.Exists(_targetPath))
+        {
+            if (IsReservedFileName(Path.GetFileName(_targetPath)))
+            {
+                DeleteReservedFile(_targetPath);
+            }
+            else
+            {
+                File.SetAttributes(_targetPath, FileAttributes.Normal);
+                File.Delete(_targetPath);
+            }
+
+            AuditLogger.LogDelete(_targetPath, true);
+            return;
+        }
+
+        if (Directory.Exists(_targetPath))
+        {
+            DeleteDirectoryRecursive(_targetPath);
+            AuditLogger.LogDelete(_targetPath, true);
+        }
+    }
+
+    internal void MoveFileOrFolderCore(string destinationPath)
+    {
+        if (File.Exists(_targetPath))
+        {
+            string destFile = Path.Combine(destinationPath, Path.GetFileName(_targetPath));
+            if (File.Exists(destFile))
+            {
+                File.Delete(destFile);
+            }
+
+            File.Move(_targetPath, destFile);
+        }
+        else if (Directory.Exists(_targetPath))
+        {
+            string destDir = Path.Combine(destinationPath, new DirectoryInfo(_targetPath).Name);
+            Directory.Move(_targetPath, destDir);
+        }
+
+        AuditLogger.LogOperation("MOVE", $"{_targetPath} -> {destinationPath}", true);
     }
 }
 

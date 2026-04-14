@@ -21,6 +21,8 @@ namespace OPTools
     private ListView _listView = null!;
     private ModernButton _btnUnlockAll = null!;
     private ModernButton _btnKillProcess = null!;
+    private ModernButton _btnRepairPermissions = null!;
+    private ModernButton _btnViewDetails = null!;
     private ModernButton _btnDelete = null!;
     private ModernButton _btnMove = null!;
     private ModernButton _btnRefresh = null!;
@@ -31,6 +33,7 @@ namespace OPTools
     private Panel _sidebarPanel = null!;
     private Panel _contentPanel = null!;
     private Panel _headerPanel = null!;
+    private FlowLayoutPanel _headerButtonsFlow = null!;
     
     // Sidebar Buttons
     private SidebarButton _navUnlocker = null!;
@@ -39,7 +42,6 @@ namespace OPTools
     private SidebarButton _navProcesses = null!;
     private SidebarButton _navContextMenu = null!;
     private SidebarButton _navApplications = null!;
-    private SidebarButton _navPackageHandler = null!;
     private SidebarButton _navBackupScheduler = null!;
     private SidebarButton _navSettings = null!;
 
@@ -55,6 +57,7 @@ namespace OPTools
 
     private string _targetPath;
     private FileUnlocker? _unlocker;
+    private UnlockWorkflow? _unlockWorkflow;
         private NavigationRouter? _router;
     private ApplicationLauncher? _appLauncher;
 
@@ -72,17 +75,13 @@ namespace OPTools
     private FlowLayoutPanel _cleanerButtonsPanel = null!;
 
     // Processes Panel
-    private Panel _processesContentPanel = null!;
-    private FlowLayoutPanel _processesButtonsPanel = null!;
+    private ProcessMonitorPanel _processMonitorPanel = null!;
 
     // Settings Panel
     private Panel _settingsContentPanel = null!;
     private FlowLayoutPanel _settingsButtonsPanel = null!;
     private CheckBox _chkStartOnStartup = null!;
     private CheckBox _chkMinimizeToTray = null!;
-
-    // Package Handler Panel
-    private PackageHandlerPanel _packageHandlerPanel = null!;
 
     // Backup Scheduler Panel
     private BackupSchedulerPanel _backupSchedulerPanel = null!;
@@ -185,7 +184,6 @@ namespace OPTools
         _navProcesses = CreateSidebarButton("Kill Processes", IconHelper.GetSidebarIcon("Processes"), "Terminate specific processes like Node.js");
         _navContextMenu = CreateSidebarButton("Context Menu Manager", IconHelper.GetSidebarIcon("ContextMenu"), "Manage Windows context menu items");
         _navApplications = CreateSidebarButton("Applications", IconHelper.GetSidebarIcon("Applications"), "Launch pinned applications");
-        _navPackageHandler = CreateSidebarButton("Package Handler", IconHelper.GetSidebarIcon("Package"), "Manage packages and projects");
         _navBackupScheduler = CreateSidebarButton("Backup Scheduler", IconHelper.GetSidebarIcon("Backup"), "Schedule and manage file backups");
 
         // Add to sidebar (reverse order for Dock.Top)
@@ -204,7 +202,6 @@ namespace OPTools
         _sidebarPanel.Controls.Add(_navSettings);
         _sidebarPanel.Controls.Add(sidebarDivider);
         _sidebarPanel.Controls.Add(_navBackupScheduler);
-        _sidebarPanel.Controls.Add(_navPackageHandler);
         _sidebarPanel.Controls.Add(_navContextMenu);
         _sidebarPanel.Controls.Add(_navProcesses);
         _sidebarPanel.Controls.Add(_navNetwork);
@@ -229,6 +226,9 @@ namespace OPTools
 
         _btnUnlockAll = CreateActionButton("Unlock All", IconHelper.GetActionIcon("Unlock"), _cAccent, "Unlock all listed files");
         _btnKillProcess = CreateActionButton("Kill Process", IconHelper.GetActionIcon("Kill"), _cDanger, "Terminate the process holding the lock");
+        _btnRepairPermissions = CreateActionButton("Repair Permissions", IconHelper.GetActionIcon("Edit"), _cAccent, "Take ownership and grant access to the current user");
+        _btnRepairPermissions.Width = 160;
+        _btnViewDetails = CreateActionButton("View Details", IconHelper.GetActionIcon("Run"), _cAccent, "Show details for the selected lock");
         _btnDelete = CreateActionButton("Delete", IconHelper.GetActionIcon("Delete"), _cDanger, "Force delete the selected file");
         _btnMove = CreateActionButton("Move", IconHelper.GetActionIcon("Move"), _cAccent, "Move the selected file to another location");
         
@@ -318,7 +318,6 @@ namespace OPTools
         InitializeContextMenuPanel();
         InitializeContextMenuManagerPanel();
         InitializeSettingsPanel();
-        InitializePackageHandlerPanel();
         InitializeBackupSchedulerPanel();
         InitializeSystemTray();
         LoadSettings();
@@ -330,13 +329,14 @@ namespace OPTools
         _navProcesses.Click += (s, e) => ShowView("processes");
         _navContextMenu.Click += (s, e) => ShowView("contextmenu");
         _navApplications.Click += (s, e) => ShowView("applications");
-        _navPackageHandler.Click += (s, e) => ShowView("packagehandler");
         _navBackupScheduler.Click += (s, e) => ShowView("backupscheduler");
         _navSettings.Click += (s, e) => ShowView("settings");
         
         // Wire up Action Buttons
         _btnUnlockAll.Click += BtnUnlockAll_Click;
         _btnKillProcess.Click += BtnKillProcess_Click;
+        _btnRepairPermissions.Click += BtnRepairPermissions_Click;
+        _btnViewDetails.Click += BtnViewDetails_Click;
         _btnDelete.Click += BtnDelete_Click;
         _btnMove.Click += BtnMove_Click;
         _btnRefresh.Click += BtnRefresh_Click;
@@ -495,45 +495,11 @@ namespace OPTools
 
     private void InitializeProcessesPanel()
     {
-        _processesContentPanel = new Panel
+        _processMonitorPanel = new ProcessMonitorPanel
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(24),
-            BackColor = _cBackground,
             Visible = false
         };
-
-        Label lblTitle = new Label
-        {
-            Text = "Kill Processes",
-            Font = new Font("Segoe UI", 16, FontStyle.Bold),
-            ForeColor = _cText,
-            AutoSize = true,
-            Dock = DockStyle.Top,
-            Padding = new Padding(0, 0, 0, 24)
-        };
-
-        _processesButtonsPanel = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoScroll = true,
-            BackColor = _cBackground,
-            Padding = new Padding(0, 16, 0, 0),
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true
-        };
-
-        // Add buttons
-        AddProcessButton("Kill Node.js", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillNodeJs_Click(s, e));
-        AddProcessButton("Kill Bun", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillBun_Click(s, e));
-        AddProcessButton("Kill WSL Relay", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillWsl_Click(s, e));
-        AddProcessButton("Kill All Dev Tools", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillDevTools_Click(s, e));
-        AddProcessButton("Kill by Port", IconHelper.GetActionIcon("Kill"), (s, e) => MenuKillPort_Click(s, e));
-
-
-        _processesContentPanel.Controls.Add(_processesButtonsPanel);
-        _processesContentPanel.Controls.Add(lblTitle);
-        _contentPanel.Controls.Add(_processesContentPanel);
+        _contentPanel.Controls.Add(_processMonitorPanel);
     }
 
     private void InitializeSettingsPanel()
@@ -611,15 +577,6 @@ namespace OPTools
         _settingsContentPanel.Controls.Add(settingsOptionsPanel);
         _settingsContentPanel.Controls.Add(lblTitle);
         _contentPanel.Controls.Add(_settingsContentPanel);
-    }
-
-    private void InitializePackageHandlerPanel()
-    {
-        _packageHandlerPanel = new PackageHandlerPanel
-        {
-            Visible = false
-        };
-        _contentPanel.Controls.Add(_packageHandlerPanel);
     }
 
     private void InitializeBackupSchedulerPanel()
@@ -757,26 +714,6 @@ namespace OPTools
         _notifyIcon.Visible = enabled;
     }
 
-    private void AddProcessButton(string text, Image icon, EventHandler action, string tooltipText = "")
-    {
-        var btn = new ModernButton
-        {
-            Text = text,
-            Image = icon,
-            BackColor = _cAccent,
-            Width = 200,
-            Height = 40,
-            Margin = new Padding(0, 0, 16, 16)
-        };
-
-        btn.Click += action;
-        if (!string.IsNullOrEmpty(tooltipText))
-        {
-            _toolTip.SetToolTip(btn, tooltipText);
-        }
-        _processesButtonsPanel.Controls.Add(btn);
-    }
-
     private void AddSettingsButton(string text, Image icon, EventHandler action, string tooltipText = "")
     {
         var btn = new ModernButton
@@ -869,27 +806,23 @@ namespace OPTools
         _navProcesses.IsActive = viewName == "processes";
         _navContextMenu.IsActive = viewName == "contextmenu";
         _navApplications.IsActive = viewName == "applications";
-        _navPackageHandler.IsActive = viewName == "packagehandler";
         _navBackupScheduler.IsActive = viewName == "backupscheduler";
         _navSettings.IsActive = viewName == "settings";
 
         // Show/hide panels
         _listView.Visible = viewName == "unlocker";
         _headerPanel.Visible = viewName == "unlocker";
-        _listView.Visible = viewName == "unlocker";
-        _headerPanel.Visible = viewName == "unlocker";
         _applicationsContentPanel.Visible = viewName == "applications";
         _cleanerContentPanel.Visible = viewName == "cleaner";
         _networkContentPanel.Visible = viewName == "network";
-        _processesContentPanel.Visible = viewName == "processes";
+        _processMonitorPanel.Visible = viewName == "processes";
         _contextMenuContentPanel.Visible = viewName == "contextmenu";
-        _packageHandlerPanel.Visible = viewName == "packagehandler";
         _backupSchedulerPanel.Visible = viewName == "backupscheduler";
         _settingsContentPanel.Visible = viewName == "settings";
 
-        if (viewName == "packagehandler")
+        if (viewName == "processes")
         {
-            _packageHandlerPanel.Initialize();
+            _processMonitorPanel.RefreshProcesses();
         }
 
         if (viewName == "backupscheduler")
@@ -929,24 +862,12 @@ namespace OPTools
         if (e.Data == null || _appLauncher == null)
             return;
 
-            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (files != null && files.Length > 0)
             {
-                string[]? files = e.Data.GetData(DataFormats.FileDrop) as string[];
-                
-                if (files != null && files.Length > 0)
-            {
-                foreach (string filePath in files)
-                {
-                    if (System.IO.File.Exists(filePath))
-                    {
-                        string ext = System.IO.Path.GetExtension(filePath).ToLowerInvariant();
-                        if (ext == ".exe" || ext == ".lnk")
-                        {
-                            AddApplicationButton(filePath);
-                            _appLauncher.AddShortcut(filePath);
-                        }
-                    }
-                }
+                HandleApplicationDrop(files);
             }
         }
     }
@@ -1144,28 +1065,55 @@ namespace OPTools
     {
         _headerPanel.Controls.Clear();
 
-        // Use FlowLayoutPanel for all buttons
-        FlowLayoutPanel flow = new FlowLayoutPanel
+        // Use a wrapping flow layout so the unlocker actions reflow like the other tool pages.
+        _headerButtonsFlow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            WrapContents = true,
             Padding = new Padding(0),
             BackColor = Color.Transparent,
             AutoSize = false
         };
 
         // Add action buttons
-        flow.Controls.Add(_btnUnlockAll);
-        flow.Controls.Add(_btnKillProcess);
-        flow.Controls.Add(_btnDelete);
-        flow.Controls.Add(_btnMove);
+        _headerButtonsFlow.Controls.Add(_btnUnlockAll);
+        _headerButtonsFlow.Controls.Add(_btnKillProcess);
+        _headerButtonsFlow.Controls.Add(_btnRepairPermissions);
+        _headerButtonsFlow.Controls.Add(_btnViewDetails);
+        _headerButtonsFlow.Controls.Add(_btnDelete);
+        _headerButtonsFlow.Controls.Add(_btnMove);
 
-        // Add refresh button with left margin to push it to the right
-        _btnRefresh.Margin = new Padding(20, 0, 0, 0);
-        flow.Controls.Add(_btnRefresh);
+        _btnRefresh.Margin = new Padding(10, 0, 0, 0);
+        _headerButtonsFlow.Controls.Add(_btnRefresh);
 
-        _headerPanel.Controls.Add(flow);
+        _headerPanel.Controls.Add(_headerButtonsFlow);
+        _headerPanel.Resize -= HeaderPanel_Resize;
+        _headerPanel.Resize += HeaderPanel_Resize;
+        UpdateHeaderLayout();
+    }
+
+    private void HeaderPanel_Resize(object? sender, System.EventArgs e)
+    {
+        UpdateHeaderLayout();
+    }
+
+    private void UpdateHeaderLayout()
+    {
+        if (_headerButtonsFlow == null || _headerButtonsFlow.IsDisposed)
+        {
+            return;
+        }
+
+        int availableWidth = _headerPanel.ClientSize.Width - _headerPanel.Padding.Horizontal;
+        if (availableWidth <= 0)
+        {
+            return;
+        }
+
+        Size preferredSize = _headerButtonsFlow.GetPreferredSize(new Size(availableWidth, 0));
+        int minimumHeight = 60;
+        _headerPanel.Height = Math.Max(minimumHeight, preferredSize.Height + _headerPanel.Padding.Vertical);
     }
 
     private void RegisterNavigationPanels()
@@ -1175,9 +1123,8 @@ namespace OPTools
         _router.RegisterPanel("applications", _applicationsContentPanel);
         _router.RegisterPanel("cleaner", _cleanerContentPanel);
         _router.RegisterPanel("network", _networkContentPanel);
-        _router.RegisterPanel("processes", _processesContentPanel);
+        _router.RegisterPanel("processes", _processMonitorPanel, () => _processMonitorPanel.RefreshProcesses());
         _router.RegisterPanel("contextmenu", _contextMenuContentPanel, () => _contextMenuManagerPanel.LoadEntries());
-        _router.RegisterPanel("packagehandler", _packageHandlerPanel, () => _packageHandlerPanel.Initialize());
         _router.RegisterPanel("backupscheduler", _backupSchedulerPanel, () => _backupSchedulerPanel.Initialize());
         _router.RegisterPanel("settings", _settingsContentPanel);
     }
@@ -1262,7 +1209,7 @@ namespace OPTools
         var textBrush = (e.Item?.Selected == true) ? Brushes.White : new SolidBrush(_cText);
         
         // Handle system process warning color
-        if (e.Item?.Tag is LockInfo info && ProcessManager.IsSystemProcess(info.ProcessId))
+        if (e.Item?.Tag is LockInfo info && info.IsSystemProcess)
         {
             textBrush = Brushes.Yellow;
         }
@@ -1300,23 +1247,27 @@ namespace OPTools
         if (string.IsNullOrWhiteSpace(_targetPath))
         {
             _lblStatus.Text = "Drag and Drop Application";
+            SetUnlockActionsEnabled(false);
             return;
         }
 
         _progressBar.Visible = true;
         _lblStatus.Text = "Enumerating locks...";
         _listView.Items.Clear();
-        _btnUnlockAll.Enabled = false;
-        _btnKillProcess.Enabled = false;
-        _btnDelete.Enabled = false;
-        _btnMove.Enabled = false;
+        SetUnlockActionsEnabled(false);
+
+        var progress = new Progress<string>(status =>
+        {
+            _lblStatus.Text = status;
+        });
 
         try
         {
             await Task.Run(() =>
             {
                 _unlocker = new FileUnlocker(_targetPath);
-                List<LockInfo> locks = _unlocker.GetLocks();
+                _unlockWorkflow = new UnlockWorkflow(_targetPath);
+                List<LockInfo> locks = _unlocker.GetLocks(progress);
 
                 this.Invoke((MethodInvoker)delegate
                 {
@@ -1338,6 +1289,8 @@ namespace OPTools
 
                     _btnUnlockAll.Enabled = locks.Count > 0;
                     _btnKillProcess.Enabled = locks.Count > 0;
+                    _btnViewDetails.Enabled = locks.Count > 0;
+                    _btnRepairPermissions.Enabled = true;
                     _btnDelete.Enabled = true;
                     _btnMove.Enabled = true;
                 });
@@ -1371,14 +1324,16 @@ namespace OPTools
 
         _progressBar.Visible = true;
         _lblStatus.Text = "Unlocking handles...";
-        _btnUnlockAll.Enabled = false;
-        _btnKillProcess.Enabled = false;
-        _btnDelete.Enabled = false;
-        _btnMove.Enabled = false;
+        SetUnlockActionsEnabled(false);
+
+        var progress = new Progress<string>(status =>
+        {
+            _lblStatus.Text = status;
+        });
 
         try
         {
-            UnlockResult unlockResult = await Task.Run(() => _unlocker.UnlockAll(false));
+            UnlockResult unlockResult = await Task.Run(() => _unlocker.UnlockAll(false, progress));
 
             _lblStatus.Text = unlockResult.Success
                 ? $"Successfully unlocked {unlockResult.UnlockedHandles} handle(s)"
@@ -1404,10 +1359,7 @@ namespace OPTools
         finally
         {
             _progressBar.Visible = false;
-            _btnUnlockAll.Enabled = true;
-            _btnKillProcess.Enabled = true;
-            _btnDelete.Enabled = true;
-            _btnMove.Enabled = true;
+            SetUnlockActionsEnabled(true);
         }
     }
 
@@ -1451,10 +1403,7 @@ namespace OPTools
 
         _progressBar.Visible = true;
         _lblStatus.Text = $"Killing process: {lockInfo.ProcessName}...";
-        _btnUnlockAll.Enabled = false;
-        _btnKillProcess.Enabled = false;
-        _btnDelete.Enabled = false;
-        _btnMove.Enabled = false;
+        SetUnlockActionsEnabled(false);
 
         try
         {
@@ -1481,16 +1430,91 @@ namespace OPTools
         finally
         {
             _progressBar.Visible = false;
-            _btnUnlockAll.Enabled = true;
-            _btnKillProcess.Enabled = true;
-            _btnDelete.Enabled = true;
-            _btnMove.Enabled = true;
+            SetUnlockActionsEnabled(true);
         }
+    }
+
+    private async void BtnRepairPermissions_Click(object? sender, EventArgs e)
+    {
+        if (_unlockWorkflow == null)
+            return;
+
+        DialogResult result = MessageBox.Show(
+            $"Repair permissions for: {_targetPath}?\n\n" +
+            "This will take ownership, grant Full Control to the current user, and clear read-only attributes.",
+            "Repair Permissions",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (result != DialogResult.Yes)
+            return;
+
+        _progressBar.Visible = true;
+        _lblStatus.Text = "Repairing permissions...";
+        SetUnlockActionsEnabled(false);
+
+        try
+        {
+            PermissionRepairResult repairResult = await Task.Run(() => _unlockWorkflow.RepairPermissions());
+
+            if (repairResult.Success)
+            {
+                _lblStatus.Text = "Permissions repaired";
+                MessageBox.Show(
+                    $"Permissions repaired successfully.\n\nProcessed items: {repairResult.ProcessedItems}",
+                    "Permissions Repaired",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            else
+            {
+                _lblStatus.Text = "Permission repair failed";
+                MessageBox.Show(
+                    BuildErrorMessage(repairResult.Errors, "Permission repair failed."),
+                    "Permission Repair Failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+
+            LoadLocks();
+        }
+        catch (Exception ex)
+        {
+            _lblStatus.Text = $"Error: {ex.Message}";
+            MessageBox.Show($"Error repairing permissions: {ex.Message}", "Error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            _progressBar.Visible = false;
+            SetUnlockActionsEnabled(true);
+        }
+    }
+
+    private void BtnViewDetails_Click(object? sender, EventArgs e)
+    {
+        LockInfo? lockInfo = GetSelectedLockInfo();
+        if (lockInfo == null)
+        {
+            MessageBox.Show("Please select a lock to inspect.", "No Selection",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        string details =
+            $"Process: {lockInfo.ProcessName}\n" +
+            $"PID: {lockInfo.ProcessId}\n" +
+            $"Executable: {GetValueOrPlaceholder(lockInfo.ProcessPath)}\n" +
+            $"Lock Type: {lockInfo.HandleType}\n" +
+            $"Locked Path: {lockInfo.FilePath}\n" +
+            $"System Process: {(lockInfo.IsSystemProcess ? "Yes" : "No")}";
+
+        MessageBox.Show(details, "Lock Details", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private async void BtnDelete_Click(object? sender, EventArgs e)
     {
-        if (_unlocker == null)
+        if (_unlockWorkflow == null)
             return;
 
         if (PathHelper.IsSystemPath(_targetPath))
@@ -1519,26 +1543,29 @@ namespace OPTools
 
         _progressBar.Visible = true;
         _lblStatus.Text = "Deleting...";
-        _btnUnlockAll.Enabled = false;
-        _btnKillProcess.Enabled = false;
-        _btnDelete.Enabled = false;
-        _btnMove.Enabled = false;
+        SetUnlockActionsEnabled(false);
+
+        var progress = new Progress<string>(status =>
+        {
+            _lblStatus.Text = status;
+        });
 
         try
         {
-            await Task.Run(() => _unlocker.DeleteFileOrFolder());
+            UnlockWorkflowResult workflowResult = await Task.Run(() => _unlockWorkflow.Delete(false, progress));
 
-            _lblStatus.Text = "Successfully deleted";
-            MessageBox.Show("File/folder deleted successfully.", "Success",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (workflowResult.Success)
+            {
+                _lblStatus.Text = GetWorkflowSuccessStatus("Deleted", workflowResult);
+                MessageBox.Show("File/folder deleted successfully.", "Success",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
 
-        }
-        catch (Exception ex)
-        {
-            _lblStatus.Text = $"Error: {ex.Message}";
-            
+            _lblStatus.Text = GetWorkflowFailureStatus("Delete", workflowResult);
+
             DialogResult scheduleResult = MessageBox.Show(
-                $"{ex.Message}\n\nWould you like to schedule this item for deletion on the next computer restart?",
+                $"{BuildWorkflowFailureMessage(workflowResult)}\n\nWould you like to schedule this item for deletion on the next computer restart?",
                 "Delete Failed",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Error);
@@ -1547,39 +1574,36 @@ namespace OPTools
             {
                 try
                 {
-                    if (_unlocker.ScheduleDeleteOnReboot())
+                    if (_unlockWorkflow.ScheduleDeleteOnReboot())
                     {
-                        MessageBox.Show("The item has been scheduled for deletion on the next restart.", 
+                        _lblStatus.Text = "Delete scheduled on reboot";
+                        MessageBox.Show("The item has been scheduled for deletion on the next restart.",
                             "Scheduled", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         this.Close();
                     }
                     else
                     {
-                        MessageBox.Show("Failed to schedule deletion. Ensure you are running as Administrator.", 
+                        MessageBox.Show("Failed to schedule deletion. Ensure you are running as Administrator.",
                             "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
                 catch (Exception scheduleEx)
                 {
-                    MessageBox.Show($"Failed to schedule deletion: {scheduleEx.Message}", 
+                    MessageBox.Show($"Failed to schedule deletion: {scheduleEx.Message}",
                         "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
-
         finally
         {
             _progressBar.Visible = false;
-            _btnUnlockAll.Enabled = true;
-            _btnKillProcess.Enabled = true;
-            _btnDelete.Enabled = true;
-            _btnMove.Enabled = true;
+            SetUnlockActionsEnabled(true);
         }
     }
 
     private async void BtnMove_Click(object? sender, EventArgs e)
     {
-        if (_unlocker == null)
+        if (_unlockWorkflow == null)
             return;
 
         if (PathHelper.IsSystemPath(_targetPath))
@@ -1613,33 +1637,38 @@ namespace OPTools
 
                 _progressBar.Visible = true;
                 _lblStatus.Text = "Moving...";
-                _btnUnlockAll.Enabled = false;
-                _btnKillProcess.Enabled = false;
-                _btnDelete.Enabled = false;
-                _btnMove.Enabled = false;
+                SetUnlockActionsEnabled(false);
+
+                var progress = new Progress<string>(status =>
+                {
+                    _lblStatus.Text = status;
+                });
 
                 try
                 {
-                    await Task.Run(() => _unlocker.MoveFileOrFolder(dialog.SelectedPath));
+                    UnlockWorkflowResult workflowResult = await Task.Run(() => _unlockWorkflow.Move(dialog.SelectedPath, progress));
 
-                    _lblStatus.Text = "Successfully moved";
-                    MessageBox.Show("File/folder moved successfully.", "Success",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-
+                    if (workflowResult.Success)
+                    {
+                        _lblStatus.Text = GetWorkflowSuccessStatus("Moved", workflowResult);
+                        MessageBox.Show("File/folder moved successfully.", "Success",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    else
+                    {
+                        _lblStatus.Text = GetWorkflowFailureStatus("Move", workflowResult);
+                        MessageBox.Show(BuildWorkflowFailureMessage(workflowResult), "Move Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                 }
                 catch (Exception ex)
                 {
                     _lblStatus.Text = $"Error: {ex.Message}";
                     MessageBox.Show(ex.Message, "Move Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-
                 finally
                 {
                     _progressBar.Visible = false;
-                    _btnUnlockAll.Enabled = true;
-                    _btnKillProcess.Enabled = true;
-                    _btnDelete.Enabled = true;
-                    _btnMove.Enabled = true;
+                    SetUnlockActionsEnabled(true);
                 }
             }
         }
@@ -1648,6 +1677,99 @@ namespace OPTools
     private void BtnRefresh_Click(object? sender, EventArgs e)
     {
         LoadLocks();
+    }
+
+    private void SetUnlockActionsEnabled(bool enabled)
+    {
+        _btnUnlockAll.Enabled = enabled;
+        _btnKillProcess.Enabled = enabled;
+        _btnRepairPermissions.Enabled = enabled;
+        _btnViewDetails.Enabled = enabled;
+        _btnDelete.Enabled = enabled;
+        _btnMove.Enabled = enabled;
+    }
+
+    private LockInfo? GetSelectedLockInfo()
+    {
+        ListViewItem? selectedItem = _listView.SelectedItems.Count > 0 ? _listView.SelectedItems[0] : null;
+        return selectedItem?.Tag as LockInfo;
+    }
+
+    private static string GetValueOrPlaceholder(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "(Unavailable)" : value;
+    }
+
+    private static string BuildErrorMessage(IEnumerable<string> errors, string fallbackMessage)
+    {
+        string[] errorArray = errors.Where(error => !string.IsNullOrWhiteSpace(error)).Distinct().ToArray();
+        return errorArray.Length == 0 ? fallbackMessage : string.Join("\n", errorArray);
+    }
+
+    private static string BuildWorkflowFailureMessage(UnlockWorkflowResult workflowResult)
+    {
+        List<string> details = new List<string>();
+
+        if (workflowResult.PermissionRepairAttempted && !workflowResult.PermissionRepairSucceeded)
+        {
+            details.Add("Permission repair did not resolve access.");
+        }
+
+        if (workflowResult.RemainingLocks.Count > 0)
+        {
+            details.Add("Processes still holding locks:");
+            details.AddRange(workflowResult.RemainingLocks
+                .Select(lockInfo => $"• {lockInfo.ProcessName} (PID: {lockInfo.ProcessId})"));
+        }
+
+        if (workflowResult.Errors.Count > 0)
+        {
+            details.AddRange(workflowResult.Errors.Distinct());
+        }
+
+        return details.Count == 0
+            ? "The operation failed."
+            : string.Join("\n", details.Distinct());
+    }
+
+    private static string GetWorkflowSuccessStatus(string action, UnlockWorkflowResult workflowResult)
+    {
+        if (workflowResult.PermissionRepairSucceeded)
+        {
+            return $"{action} after repairing permissions";
+        }
+
+        if (workflowResult.KilledProcesses > 0)
+        {
+            return $"{action} after closing blocking processes";
+        }
+
+        if (workflowResult.UnlockedHandles > 0)
+        {
+            return $"{action} after unlocking handles";
+        }
+
+        return $"{action} successfully";
+    }
+
+    private static string GetWorkflowFailureStatus(string action, UnlockWorkflowResult workflowResult)
+    {
+        if (workflowResult.ScheduledOnReboot)
+        {
+            return $"{action} requires reboot";
+        }
+
+        if (workflowResult.RemainingLocks.Count > 0)
+        {
+            return $"{action} blocked by locks";
+        }
+
+        if (workflowResult.PermissionRepairAttempted || workflowResult.Diagnostics is { HasDeletePermission: false })
+        {
+            return $"{action} blocked by permissions";
+        }
+
+        return $"{action} failed";
     }
 
     private void UpdateContextMenuStatus()

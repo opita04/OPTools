@@ -1,0 +1,27 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="backupGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#37474f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#263238;stop-opacity:1" />
+    </linearGradient>
+    <filter id="tealGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Database/Storage Shape -->
+  <ellipse cx="32" cy="16" rx="20" ry="8" fill="url(#backupGrad)" stroke="#546e7a" stroke-width="2"/>
+  <path d="M12 16 L12 40 A20 8 0 0 0 0 52 40 L52 16" fill="url(#backupGrad)" stroke="#546e7a" stroke-width="2"/>
+  <ellipse cx="32" cy="40" rx="20" ry="8" fill="url(#backupGrad)" stroke="#546e7a" stroke-width="2"/>
+  <path d="M12 40 L12 56 A20 8 0 0 0 0 52 56 L52 40" fill="url(#backupGrad)" stroke="#546e7a" stroke-width="2"/>
+  <ellipse cx="32" cy="56" rx="20" ry="8" fill="url(#backupGrad)" stroke="#546e7a" stroke-width="2"/>
+  
+  <!-- Clock Arrow (schedule) -->
+  <circle cx="32" cy="36" r="4" fill="#26a69a" filter="url(#tealGlow)"/>
+  <line x1="32" y1="36" x2="32" y2="28" stroke="#26a69a" stroke-width="2" stroke-linecap="round" filter="url(#tealGlow)"/>
+  <line x1="32" y1="36" x2="38" y2="42" stroke="#26a69a" stroke-width="2" stroke-linecap="round" filter="url(#tealGlow)"/>
+</svg>
