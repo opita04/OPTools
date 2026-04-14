@@ -1,0 +1,3 @@
+## 2025-04-14 - Add accessibility to icon buttons and modern controls
+**Learning:** WinForms `AccessibleName`, `AccessibleDescription`, and `AccessibleRole` correspond to ARIA properties for standard screen readers, while entirely custom drawn UI elements like `ModernButton` (where `OnPaint` is overridden) completely lose keyboard focus visual state unless `OnGotFocus` and `OnLostFocus` are explicitly handled to draw a focus outline.
+**Action:** Always ensure that custom-drawn UI components in WinForms explicitly react to `this.Focused` and draw visual focus indicators to support keyboard navigation. Use `AccessibleName` for icon-only buttons.

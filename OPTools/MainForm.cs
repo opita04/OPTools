@@ -239,8 +239,12 @@ namespace OPTools
             BackColor = Color.FromArgb(60, 60, 60),
             Width = 50,
             Height = 36,
-            Margin = new Padding(0, 0, 0, 0)
+            Margin = new Padding(0, 0, 0, 0),
+            AccessibleName = "Refresh",
+            AccessibleDescription = "Refresh the list of locks",
+            AccessibleRole = AccessibleRole.PushButton
         };
+        _toolTip.SetToolTip(_btnRefresh, "Refresh list");
 
 
         // Initialize Header Layout
