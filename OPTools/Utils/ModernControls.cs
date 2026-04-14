@@ -60,6 +60,18 @@ public class ModernButton : Button
         _isPressed = false;
     }
 
+    protected override void OnGotFocus(EventArgs e)
+    {
+        base.OnGotFocus(e);
+        this.Invalidate();
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        base.OnLostFocus(e);
+        this.Invalidate();
+    }
+
     protected override void OnPaint(PaintEventArgs pevent)
     {
         var graphics = pevent.Graphics;
@@ -94,7 +106,15 @@ public class ModernButton : Button
             }
 
             // Draw border
-            if (BorderSize > 0)
+            if (this.Focused)
+            {
+                // Draw a focus outline
+                using (var pen = new Pen(Color.FromArgb(0, 122, 204), Math.Max(2, BorderSize + 1)))
+                {
+                    graphics.DrawPath(pen, path);
+                }
+            }
+            else if (BorderSize > 0)
             {
                 using (var pen = new Pen(BorderColor, BorderSize))
                 {
