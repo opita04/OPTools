@@ -81,5 +81,6 @@ publish/
 # Custom
 [Rr]ebuild/
 nul
+repomix-output.xml
 
 

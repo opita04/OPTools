@@ -50,37 +50,20 @@ public class HandleEnumerator
         // RM API is fast but misses kernel-level, antivirus, and memory-mapped locks
         // Legacy enumeration is slower but catches more edge cases
         
-        // Step 1: Try Restart Manager API first (fast, covers most user-mode locks)
-        try
+        // Step 1: Try Restart Manager API first for single-file targets.
+        // Folder scans cannot be registered efficiently with Restart Manager because
+        // they currently fan out into one session per file, which stalls large unlocks.
+        if (ShouldUseRestartManager())
         {
-            progress?.Report("Scanning with Restart Manager...");
-            List<string> filesToCheck = new List<string>();
-
-            if (_isDirectory)
+            try
             {
-                try
-                {
-                    filesToCheck.AddRange(Directory.GetFiles(_targetPath, "*", SearchOption.AllDirectories));
-                }
-                catch
-                {
-                    filesToCheck.Add(_targetPath);
-                }
+                progress?.Report("Scanning with Restart Manager...");
+                locks.AddRange(GetLockingProcesses(_targetPath));
             }
-            else
+            catch (Exception ex)
             {
-                filesToCheck.Add(_targetPath);
+                System.Diagnostics.Debug.WriteLine($"Restart Manager enumeration failed: {ex.Message}");
             }
-
-            foreach (string file in filesToCheck)
-            {
-                var fileLocks = GetLockingProcesses(file);
-                locks.AddRange(fileLocks);
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Restart Manager enumeration failed: {ex.Message}");
         }
 
         // Step 2: ALWAYS supplement with legacy handle enumeration to catch locks RM misses
@@ -124,6 +107,11 @@ public class HandleEnumerator
         }
 
         return locks.DistinctBy(l => new { l.ProcessId, l.FilePath, l.HandleType }).ToList();
+    }
+
+    internal bool ShouldUseRestartManager()
+    {
+        return !_isDirectory;
     }
 
     private List<LockInfo> GetLockingProcesses(string filePath)
