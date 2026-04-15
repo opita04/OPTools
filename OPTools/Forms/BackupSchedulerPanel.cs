@@ -523,7 +523,9 @@ public class BackupJobEditorDialog : Form
             Size = new Size(30, 27),
             FlatStyle = FlatStyle.Flat,
             BackColor = _cCardBg,
-            ForeColor = _cText
+            ForeColor = _cText,
+            AccessibleName = "Browse for Source",
+            AccessibleDescription = "Opens a dialog to select the source folder."
         };
         btnBrowseSource.Click += (s, e) =>
         {
@@ -546,7 +548,9 @@ public class BackupJobEditorDialog : Form
             Size = new Size(30, 27),
             FlatStyle = FlatStyle.Flat,
             BackColor = _cCardBg,
-            ForeColor = _cText
+            ForeColor = _cText,
+            AccessibleName = "Browse for Destination",
+            AccessibleDescription = "Opens a dialog to select the destination folder."
         };
         btnBrowseDest.Click += (s, e) =>
         {
