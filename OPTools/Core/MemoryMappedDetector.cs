@@ -185,7 +185,8 @@ public class MemoryMappedDetector
         // Find the object type number for Section objects by examining handles
         // in the current process where we can reliably query the type
         var handles = EnumerateSystemHandles();
-        uint currentPid = (uint)Process.GetCurrentProcess().Id;
+        // Optimization: Use P/Invoke to avoid Process object allocation
+        uint currentPid = WindowsApi.GetCurrentProcessId();
 
         foreach (var handle in handles)
         {
@@ -195,7 +196,8 @@ public class MemoryMappedDetector
             IntPtr duplicateHandle = IntPtr.Zero;
             try
             {
-                IntPtr currentProcess = Process.GetCurrentProcess().Handle;
+                // Optimization: Use P/Invoke to avoid Process object allocation in tight loop
+            IntPtr currentProcess = WindowsApi.GetCurrentProcess();
                 uint status = WindowsApi.NtDuplicateObject(
                     currentProcess,
                     new IntPtr(handle.Handle),
@@ -286,7 +288,8 @@ public class MemoryMappedDetector
             if (processHandle == IntPtr.Zero)
                 return null;
 
-            IntPtr currentProcess = Process.GetCurrentProcess().Handle;
+            // Optimization: Use P/Invoke to avoid Process object allocation in tight loop
+            IntPtr currentProcess = WindowsApi.GetCurrentProcess();
             uint status = WindowsApi.NtDuplicateObject(
                 processHandle,
                 new IntPtr(handle.Handle),

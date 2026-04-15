@@ -4,7 +4,7 @@ using System.Text;
 
 namespace OPTools.Utils;
 
-public static class WindowsApi
+public static partial class WindowsApi
 {
     // Constants
     public const uint STATUS_INFO_LENGTH_MISMATCH = 0xC0000004;
@@ -206,7 +206,7 @@ public static class WindowsApi
     public static bool EnablePrivilege(string privilegeName)
     {
         IntPtr hToken;
-        if (!OpenProcessToken(System.Diagnostics.Process.GetCurrentProcess().Handle, 
+        if (!OpenProcessToken(GetCurrentProcess(),
             TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out hToken))
         {
             return false;
