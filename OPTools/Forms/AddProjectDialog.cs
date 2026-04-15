@@ -68,7 +68,9 @@ namespace OPTools.Forms
                 Width = 35,
                 Height = 28,
                 Location = new Point(460 - 35, y),
-                BackColor = _cCardBg
+                BackColor = _cCardBg,
+                AccessibleName = "Browse for Project Path",
+                AccessibleDescription = "Opens a dialog to select the folder path for the project."
             };
             btnBrowse.Click += BtnBrowse_Click;
             this.Controls.Add(btnBrowse);

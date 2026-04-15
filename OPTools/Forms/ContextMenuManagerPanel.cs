@@ -430,7 +430,9 @@ public class ContextMenuEntryDialog : Form
             Size = new Size(30, 27),
             FlatStyle = FlatStyle.Flat,
             BackColor = _cCardBg,
-            ForeColor = _cText
+            ForeColor = _cText,
+            AccessibleName = "Browse for Application",
+            AccessibleDescription = "Opens a dialog to select the application executable."
         };
         btnBrowseApp.Click += BtnBrowseApp_Click;
         this.Controls.Add(btnBrowseApp);
@@ -448,7 +450,9 @@ public class ContextMenuEntryDialog : Form
             Size = new Size(30, 27),
             FlatStyle = FlatStyle.Flat,
             BackColor = _cCardBg,
-            ForeColor = _cText
+            ForeColor = _cText,
+            AccessibleName = "Browse for Icon",
+            AccessibleDescription = "Opens a dialog to select an icon file."
         };
         btnBrowseIcon.Click += BtnBrowseIcon_Click;
         this.Controls.Add(btnBrowseIcon);
