@@ -318,7 +318,8 @@ namespace OPTools.Core
 
                     if (depth >= MaxScanDepth) continue;
 
-                    foreach (var subDir in Directory.GetDirectories(currentDir))
+                    // ⚡ Bolt: Use EnumerateDirectories instead of GetDirectories to prevent large array allocations
+                    foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                     {
                         var subDirName = Path.GetFileName(subDir);
                         if (!_excludedDirs.Contains(subDirName))
@@ -484,9 +485,11 @@ namespace OPTools.Core
             // Check for .vcxproj files
             try
             {
-                var vcxprojFiles = Directory.GetFiles(directory, "*.vcxproj");
-                if (vcxprojFiles.Length > 0)
-                    return Path.GetFileName(vcxprojFiles[0]);
+                // ⚡ Bolt: Use EnumerateFiles().FirstOrDefault() to find just the first match
+                // instead of allocating an array for all matches in the directory.
+                var firstVcxproj = Directory.EnumerateFiles(directory, "*.vcxproj").FirstOrDefault();
+                if (firstVcxproj != null)
+                    return Path.GetFileName(firstVcxproj);
             }
             catch { }
 
@@ -520,7 +523,8 @@ namespace OPTools.Core
                         continue; // Don't recurse into project directories
                     }
 
-                    foreach (var subDir in Directory.GetDirectories(currentDir))
+                    // ⚡ Bolt: Use EnumerateDirectories instead of GetDirectories to prevent large array allocations
+                    foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                     {
                         var subDirName = Path.GetFileName(subDir);
                         if (!_excludedDirs.Contains(subDirName))
@@ -968,7 +972,8 @@ namespace OPTools.Core
                         }
                         
                         // Add subdirectories to queue (only if we didn't find a valid project above)
-                        foreach (var subDir in Directory.GetDirectories(currentDir))
+                        // ⚡ Bolt: Use EnumerateDirectories instead of GetDirectories to prevent large array allocations
+                        foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                         {
                             var subDirName = Path.GetFileName(subDir);
                             if (!_excludedDirs.Contains(subDirName))
