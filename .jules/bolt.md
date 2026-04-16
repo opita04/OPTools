@@ -1,3 +1,7 @@
 ## 2025-04-14 - Process.GetCurrentProcess() Allocation Overhead
 **Learning:** In .NET, `Process.GetCurrentProcess()` does not return a cached instance. It allocates a new `System.Diagnostics.Process` object and makes an underlying native API call every time it is invoked. Inside tight loops (like iterating over thousands of system handles during memory/lock enumeration), this leads to excessive GC pressure and CPU overhead.
 **Action:** Always prefer direct P/Invoke calls (`[DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();`) when the process handle or ID is needed inside tight, performance-critical loops in C# code.
+
+## 2025-05-18 - C# Directory Enumeration While Mutating
+**Learning:** In C#, replacing `Directory.GetFiles()` with `Directory.EnumerateFiles()` is generally a memory optimization, but it is unsafe to use lazy enumeration if you are mutating the directory structure (e.g., deleting files or directories) inside the loop. Modifying the directory contents during enumeration can cause the underlying file system index (B-Tree on NTFS) to rebalance, causing the enumerator to skip items. Additionally, if the enumeration is followed by `.OrderBy()`, LINQ will materialize the list anyway, negating the memory benefit.
+**Action:** Only replace `GetFiles`/`GetDirectories` with `EnumerateFiles`/`EnumerateDirectories` for read-only directory traversal. For directory cleaning or mass deletion, stick to `GetFiles` to safely capture a static snapshot of the contents before modifying them.
