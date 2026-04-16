@@ -239,8 +239,11 @@ namespace OPTools
             BackColor = Color.FromArgb(60, 60, 60),
             Width = 50,
             Height = 36,
-            Margin = new Padding(0, 0, 0, 0)
+            Margin = new Padding(0, 0, 0, 0),
+            AccessibleName = "Refresh",
+            AccessibleDescription = "Refresh the lock list"
         };
+        _toolTip.SetToolTip(_btnRefresh, "Refresh");
 
 
         // Initialize Header Layout
@@ -1136,7 +1139,9 @@ namespace OPTools
             Image = icon,
             IsActive = isActive,
             Dock = DockStyle.Top,
-            Height = 48
+            Height = 48,
+            AccessibleName = text,
+            AccessibleDescription = tooltipText
         };
         
         if (!string.IsNullOrEmpty(tooltipText))
@@ -1156,7 +1161,9 @@ namespace OPTools
             BackColor = color,
             Size = new Size(120, 36),
             Margin = new Padding(0, 0, 10, 0),
-            Padding = new Padding(8, 0, 8, 0)
+            Padding = new Padding(8, 0, 8, 0),
+            AccessibleName = text,
+            AccessibleDescription = tooltipText
         };
 
         if (!string.IsNullOrEmpty(tooltipText))
