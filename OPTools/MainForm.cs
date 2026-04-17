@@ -239,9 +239,11 @@ namespace OPTools
             BackColor = Color.FromArgb(60, 60, 60),
             Width = 50,
             Height = 36,
-            Margin = new Padding(0, 0, 0, 0)
+            Margin = new Padding(0, 0, 0, 0),
+            AccessibleName = "Refresh List",
+            AccessibleDescription = "Refreshes the list of files or applications."
         };
-
+        _toolTip.SetToolTip(_btnRefresh, "Refresh List");
 
         // Initialize Header Layout
         InitializeHeaderButtons();
