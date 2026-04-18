@@ -1,3 +1,6 @@
 ## 2025-04-14 - Process.GetCurrentProcess() Allocation Overhead
 **Learning:** In .NET, `Process.GetCurrentProcess()` does not return a cached instance. It allocates a new `System.Diagnostics.Process` object and makes an underlying native API call every time it is invoked. Inside tight loops (like iterating over thousands of system handles during memory/lock enumeration), this leads to excessive GC pressure and CPU overhead.
 **Action:** Always prefer direct P/Invoke calls (`[DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();`) when the process handle or ID is needed inside tight, performance-critical loops in C# code.
+## 2026-04-18 - GetDirectories/GetFiles Allocation Overhead
+**Learning:** Using `Directory.GetDirectories` and `Directory.GetFiles` with `SearchOption.AllDirectories` eagerly evaluates and creates massive string arrays in memory. This leads to extremely high memory pressure and large object heap allocations when deeply recursing through a file system.
+**Action:** Use `Directory.EnumerateDirectories` and `Directory.EnumerateFiles` to lazily yield file paths. This drastically reduces memory allocations and decreases time-to-first-result, and should be the default pattern throughout the app when traversing directories.
