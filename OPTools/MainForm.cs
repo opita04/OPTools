@@ -239,8 +239,11 @@ namespace OPTools
             BackColor = Color.FromArgb(60, 60, 60),
             Width = 50,
             Height = 36,
-            Margin = new Padding(0, 0, 0, 0)
+            Margin = new Padding(0, 0, 0, 0),
+            AccessibleName = "Refresh",
+            AccessibleDescription = "Refreshes the list of active locks for the selected path"
         };
+        _toolTip.SetToolTip(_btnRefresh, "Refresh lock list");
 
 
         // Initialize Header Layout
