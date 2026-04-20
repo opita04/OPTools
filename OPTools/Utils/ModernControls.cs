@@ -151,6 +151,11 @@ public class ModernButton : Button
             float textY = centerY - (textSize.Height / 2);
             graphics.DrawString(this.Text, this.Font, brush, startX, textY);
         }
+
+        if (this.Focused && this.ShowFocusCues)
+        {
+            ControlPaint.DrawFocusRectangle(graphics, this.ClientRectangle);
+        }
     }
 
     private GraphicsPath GetRoundedPath(Rectangle rect, int radius)
@@ -258,6 +263,12 @@ public class SidebarButton : Button
             SizeF textSize = graphics.MeasureString(this.Text, fontToUse);
             float textY = centerY - (textSize.Height / 2);
             graphics.DrawString(this.Text, fontToUse, brush, textX, textY);
+        }
+
+        if (this.Focused && this.ShowFocusCues)
+        {
+            Rectangle focusRect = new Rectangle(10, 2, this.Width - 20, this.Height - 4);
+            ControlPaint.DrawFocusRectangle(graphics, focusRect);
         }
     }
 
