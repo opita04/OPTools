@@ -30,7 +30,9 @@ public static class FolderCleaner
                 DirectoryInfo dir = new DirectoryInfo(folderPath);
 
                 // Delete all files
-                foreach (FileInfo file in dir.GetFiles("*", SearchOption.AllDirectories))
+                // ⚡ Bolt Performance Optimization: Use EnumerateFiles instead of GetFiles
+                // to avoid allocating a large array in memory, especially useful for directories with thousands of files.
+                foreach (FileInfo file in dir.EnumerateFiles("*", SearchOption.AllDirectories))
                 {
                     try
                     {
@@ -45,7 +47,9 @@ public static class FolderCleaner
                 }
 
                 // Delete all subdirectories
-                foreach (DirectoryInfo subDir in dir.GetDirectories("*", SearchOption.TopDirectoryOnly).OrderByDescending(d => d.FullName.Length))
+                // ⚡ Bolt Performance Optimization: Use EnumerateDirectories instead of GetDirectories
+                // to slightly optimize the collection before the OrderByDescending materialization.
+                foreach (DirectoryInfo subDir in dir.EnumerateDirectories("*", SearchOption.TopDirectoryOnly).OrderByDescending(d => d.FullName.Length))
                 {
                     try
                     {
