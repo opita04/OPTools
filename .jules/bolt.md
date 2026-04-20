@@ -1,3 +1,6 @@
 ## 2025-04-14 - Process.GetCurrentProcess() Allocation Overhead
 **Learning:** In .NET, `Process.GetCurrentProcess()` does not return a cached instance. It allocates a new `System.Diagnostics.Process` object and makes an underlying native API call every time it is invoked. Inside tight loops (like iterating over thousands of system handles during memory/lock enumeration), this leads to excessive GC pressure and CPU overhead.
 **Action:** Always prefer direct P/Invoke calls (`[DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();`) when the process handle or ID is needed inside tight, performance-critical loops in C# code.
+## 2025-04-14 - LINQ OrderBy overrides lazy EnumerateDirectories
+**Learning:** While replacing `Directory.GetDirectories` with `Directory.EnumerateDirectories` reduces memory allocation for deferred execution, chaining it immediately with a LINQ sorting operation like `.OrderByDescending(...)` forces the entire collection to be materialized into a buffer in memory anyway.
+**Action:** When optimizing enumeration in C#, evaluate if downstream LINQ methods (like sorting) negate the memory benefits. If sorting is mandatory, the deferred execution benefit is lost.
