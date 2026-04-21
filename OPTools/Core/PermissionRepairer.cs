@@ -86,12 +86,14 @@ public sealed class PermissionRepairer
             yield break;
         }
 
-        foreach (string directory in Directory.GetDirectories(_targetPath, "*", SearchOption.AllDirectories))
+        // ⚡ Bolt: Use EnumerateDirectories instead of GetDirectories to prevent large object heap allocations and reduce memory pressure
+        foreach (string directory in Directory.EnumerateDirectories(_targetPath, "*", SearchOption.AllDirectories))
         {
             yield return directory;
         }
 
-        foreach (string file in Directory.GetFiles(_targetPath, "*", SearchOption.AllDirectories))
+        // ⚡ Bolt: Use EnumerateFiles instead of GetFiles to lazily evaluate files and avoid memory spikes on large directories
+        foreach (string file in Directory.EnumerateFiles(_targetPath, "*", SearchOption.AllDirectories))
         {
             yield return file;
         }
