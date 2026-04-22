@@ -86,12 +86,16 @@ public sealed class PermissionRepairer
             yield break;
         }
 
-        foreach (string directory in Directory.GetDirectories(_targetPath, "*", SearchOption.AllDirectories))
+        // ⚡ Bolt Performance Optimization:
+        // Using EnumerateDirectories and EnumerateFiles instead of GetDirectories and GetFiles
+        // prevents materialization of the entire file/directory list into a massive array upfront,
+        // which reduces memory allocations and GC pressure during large directory traversals.
+        foreach (string directory in Directory.EnumerateDirectories(_targetPath, "*", SearchOption.AllDirectories))
         {
             yield return directory;
         }
 
-        foreach (string file in Directory.GetFiles(_targetPath, "*", SearchOption.AllDirectories))
+        foreach (string file in Directory.EnumerateFiles(_targetPath, "*", SearchOption.AllDirectories))
         {
             yield return file;
         }
