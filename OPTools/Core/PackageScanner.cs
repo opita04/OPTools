@@ -318,7 +318,8 @@ namespace OPTools.Core
 
                     if (depth >= MaxScanDepth) continue;
 
-                    foreach (var subDir in Directory.GetDirectories(currentDir))
+                    // Bolt optimization: EnumerateDirectories avoids allocating a large array of paths, reducing GC pressure and memory usage during deep scans.
+                    foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                     {
                         var subDirName = Path.GetFileName(subDir);
                         if (!_excludedDirs.Contains(subDirName))
@@ -481,12 +482,12 @@ namespace OPTools.Core
 
         private string? FindCppMarker(string directory)
         {
-            // Check for .vcxproj files
+            // Bolt optimization: Use EnumerateFiles().FirstOrDefault() to stop querying the file system immediately once a matching .vcxproj file is found, preventing unnecessary allocations and disk I/O.
             try
             {
-                var vcxprojFiles = Directory.GetFiles(directory, "*.vcxproj");
-                if (vcxprojFiles.Length > 0)
-                    return Path.GetFileName(vcxprojFiles[0]);
+                var vcxprojFile = Directory.EnumerateFiles(directory, "*.vcxproj").FirstOrDefault();
+                if (vcxprojFile != null)
+                    return Path.GetFileName(vcxprojFile);
             }
             catch { }
 
@@ -520,7 +521,8 @@ namespace OPTools.Core
                         continue; // Don't recurse into project directories
                     }
 
-                    foreach (var subDir in Directory.GetDirectories(currentDir))
+                    // Bolt optimization: EnumerateDirectories reduces GC pressure.
+                    foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                     {
                         var subDirName = Path.GetFileName(subDir);
                         if (!_excludedDirs.Contains(subDirName))
@@ -968,7 +970,8 @@ namespace OPTools.Core
                         }
                         
                         // Add subdirectories to queue (only if we didn't find a valid project above)
-                        foreach (var subDir in Directory.GetDirectories(currentDir))
+                        // Bolt optimization: EnumerateDirectories reduces memory usage by yielding one element at a time.
+                        foreach (var subDir in Directory.EnumerateDirectories(currentDir))
                         {
                             var subDirName = Path.GetFileName(subDir);
                             if (!_excludedDirs.Contains(subDirName))

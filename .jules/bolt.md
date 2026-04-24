@@ -1,3 +1,6 @@
 ## 2025-04-14 - Process.GetCurrentProcess() Allocation Overhead
 **Learning:** In .NET, `Process.GetCurrentProcess()` does not return a cached instance. It allocates a new `System.Diagnostics.Process` object and makes an underlying native API call every time it is invoked. Inside tight loops (like iterating over thousands of system handles during memory/lock enumeration), this leads to excessive GC pressure and CPU overhead.
 **Action:** Always prefer direct P/Invoke calls (`[DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();`) when the process handle or ID is needed inside tight, performance-critical loops in C# code.
+## 2025-04-14 - Optimize read-only directory enumeration
+**Learning:** For read-only directory and file traversal scenarios in .NET, using `Directory.GetDirectories` and `Directory.GetFiles` loads all matched string paths into an array in memory. This causes unnecessary memory allocations and GC pressure, particularly for deep scans or directories with many files.
+**Action:** Replace `Directory.GetDirectories` and `Directory.GetFiles` with `Directory.EnumerateDirectories` and `Directory.EnumerateFiles` when only iterating through read-only items or selecting a single item (`.FirstOrDefault()`), as this creates an iterator that yields elements one by one.
