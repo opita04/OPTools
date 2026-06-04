@@ -39,4 +39,20 @@ public class PathHelperTests
         bool result = PathHelper.IsValidPath(path);
         Assert.Equal(expected, result);
     }
+
+    [Theory]
+    [InlineData("C:\\Windows", "c:\\windows", true)]
+    [InlineData("C:\\Windows\\", "C:\\Windows", true)]
+    [InlineData("C:\\Windows\\System32", "C:\\Windows", true)]
+    [InlineData("C:\\Windows", "C:\\Windows\\System32", true)]
+    [InlineData("C:\\Windows", "C:\\Program Files", false)]
+    [InlineData("C:\\Windows", "C:\\Window", false)]
+    [InlineData(null, "C:\\Windows", false)]
+    [InlineData("", "C:\\Windows", false)]
+    [InlineData("   ", "C:\\Windows", false)]
+    public void PathMatches_ShouldCorrectlyMatchPaths(string? path1, string? path2, bool expected)
+    {
+        bool result = PathHelper.PathMatches(path1!, path2!);
+        Assert.Equal(expected, result);
+    }
 }
